@@ -1,0 +1,13 @@
+# application.yaml
+spring:
+  application:
+    name: inventory
+  profiles:
+    active: local
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: true
