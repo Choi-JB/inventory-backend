@@ -1,0 +1,18 @@
+package com.example.inventory.repository;
+
+import com.example.inventory.entity.Product;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
+import org.springframework.data.repository.query.Param;
+
+public interface ProductRepository extends JpaRepository<Product, Long> {
+    // 비관적 락을 사용하여 상품 정보 조회
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Product p WHERE p.id = :id")
+    Optional<Product> findByIdForUpdate(@Param("id") Long id);
+    
+}
