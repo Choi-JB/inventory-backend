@@ -63,4 +63,5 @@ public class StockTransaction {
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
     }
+    
 }

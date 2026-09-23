@@ -48,8 +48,31 @@ public class Product {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    //생성자
+    public Product(String name, String sku, Long categoryId, Unit unit, BigDecimal sellingPrice, Integer minStockLevel){
+        this.name = name;
+        this.sku = sku;
+        this.categoryId = categoryId;
+        this.unit = unit;
+        this.sellingPrice = sellingPrice;
+        this.minStockLevel = minStockLevel;
+        this.createdAt = LocalDateTime.now();
+
+        this.costPrice = BigDecimal.ZERO;
+        this.currentStock = 0;
+    }
+
+    //생성 시 자동 설정
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+    }
+
+    public void update(String name, BigDecimal sellingPrice, Integer minStockLevel, Long categoryId) {
+        // 힌트: Category.update()랑 똑같은 패턴 — 필드 4개 그대로 대입
+        this.name = name;
+        this.sellingPrice = sellingPrice;
+        this.minStockLevel = minStockLevel;
+        this.categoryId = categoryId;
     }
 }
