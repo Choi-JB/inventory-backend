@@ -34,4 +34,15 @@ public class Category {
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
     }
+
+    public Category(String name, String description, Long parentId) {
+        this.name = name;
+        this.description = description;
+        this.parentId = parentId;
+    }
+
+    public void update(String name, String description) {
+        this.name = name;
+        this.description = description;
+    }
 }
