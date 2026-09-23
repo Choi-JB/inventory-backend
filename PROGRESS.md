@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-09-22
+**최종 갱신**: 2026-09-23
 
 ---
 
@@ -65,8 +65,9 @@ main - dev - feature/*
 2. `feature/spring-init` — Spring Boot 프로젝트 세팅, DB 연결 확인 (develop 브랜치로 나누지 않고 초기 커밋으로 처리)
 3. `feature/entity-repository` — Entity 4종, enum 4종, Repository 4종
 4. `feature/auth-jwt-oauth` — JWT + 구글 OAuth2
+5. `feature/category-crud` — Category 트리 CRUD + 공통 예외 처리(`GlobalExceptionHandler`) 최초 도입
 
-**현재 진행 중**: `feature/category-crud` (5단계)
+**다음 진행 예정**: `feature/product-crud` (6단계)
 
 ---
 
@@ -78,15 +79,26 @@ main - dev - feature/*
 - **`redirect-uri`를 커스텀 경로로 바꿀 때는 `SecurityConfig`의 `.oauth2Login(...)` 안에 `.redirectionEndpoint(redirection -> redirection.baseUri(...))`도 같이 설정해야 함.** `application-local.yaml`의 `redirect-uri` 속성만 바꾸는 걸로는 실제 콜백 처리 필터의 매칭 경로가 안 바뀜 (기본값 `/login/oauth2/code/*`로 남아있어서 인증이 안 됨).
 - **비즈니스 로직은 Service 계층에 캡슐화** (패키지구조설계서 2.5 원칙). 초기에 `OAuth2LoginSuccessHandler`에 유저 조회/생성+JWT 발급 로직을 직접 넣었다가, `AuthService.loginWithGoogle()`로 리팩토링 완료. Handler는 이제 요청/응답 변환만 담당.
 - **`ddl-auto: validate`** 사용 — Entity가 Supabase에 이미 만든 테이블과 정확히 일치해야 서버가 뜸 (컬럼명, enum `@Enumerated(STRING)` 여부 등 주의).
+- **예외 처리 구조**: `BusinessException`(추상 클래스, `getCode()`/`getStatus()` 선언) → `NotFoundException`(404), `DeleteConflictException`(409)이 상속. `GlobalExceptionHandler`가 `BusinessException` 하나만 잡으면 되므로, 새 예외(`InsufficientStockException` 등, stock-transaction 단계에서 추가 예정)가 생겨도 핸들러 코드를 안 건드려도 됨.
+- **`GlobalExceptionHandler`의 catch-all(`Exception.class`) 핸들러는 반드시 로그를 남겨야 함.** 안 남기면 클라이언트도 서버 콘솔도 원인을 알 수 없음 — Spring이 `@ExceptionHandler`가 처리한 예외는 "처리됨"으로 보고 자동 에러 로그를 안 남기기 때문. `log.error("...", e)`를 꼭 추가할 것.
+- **catch-all이 프레임워크 예외까지 삼켜버리는 문제 발견**: `AuthorizationDeniedException`(`@PreAuthorize` 실패, 원래 403이어야 함), `HttpRequestMethodNotSupportedException`(잘못된 HTTP 메서드/경로, 원래 405여야 함)이 전부 catch-all에 걸려 500으로 잘못 나갔음. `AuthorizationDeniedException`은 전용 핸들러 추가해서 403으로 고침. `HttpRequestMethodNotSupportedException`(405)은 **아직 안 고침 — product-crud 단계에서 처리할 것**.
+- **응답 DTO 패턴**: Category 생성/수정 응답을 처음엔 엔티티(`Category`) 그대로 반환했다가, 일관성을 위해 `CategoryResponse`(record, `from(Category)` 정적 팩토리) 로 리팩토링함. Product/StockTransaction도 같은 패턴(엔티티 직접 반환 금지, 응답 DTO 경유) 유지할 것.
+- **JPA dirty checking vs `save()`**: 같은 트랜잭션 안에서 `findById()`로 가져온 영속 상태 엔티티는 필드만 바꿔도 트랜잭션 커밋 시 자동 UPDATE됨(`save()` 호출 불필요, 호출해도 무해함 — 이미 관리 중인 엔티티라 `merge()`가 그대로 반환만 함). 이 원칙은 detached 엔티티(다른 트랜잭션에서 가져온 경우)에는 적용 안 되니 주의.
+- **역할(role) 변경 후 반드시 재로그인 필요**: role은 JWT 클레임에 박혀서 발급되므로, DB에서 role을 바꿔도 기존 토큰엔 반영 안 됨(API 명세서에 명시된 내용). ADMIN/STAFF 권한 테스트 시 재로그인해서 새 토큰 받아야 함 — 계정 2개 없어도 계정 1개로 role 토글하면서 양쪽 다 테스트 가능.
+- **Windows 콘솔 한글 로그 깨짐**: `gradlew bootRun` 콘솔에서 한글 로그 메시지가 깨져 보임(인코딩 문제, cp949 vs UTF-8 추정). 기능적 문제는 아니고 가독성 문제라 우선순위 낮음 — 필요시 나중에 콘솔 인코딩 설정으로 해결.
 
 ---
 
 ## 4. AI(Claude) 활용 방식
 
-작업순서 문서의 기준(핵심 학습 포인트는 직접 작성, 보일러플레이트는 AI 생성) 그대로 따르는 중. Entity/Repository/Security 관련 코드는 전부 사용자가 직접 작성했고, Claude는 예시 코드 제시 + 리뷰(버그/설계 이슈 지적) 역할만 수행. 이 패턴을 계속 유지하는 게 좋음 — 새 세션에서도 "예시 보여주고 직접 짜게 하고 리뷰"하는 흐름으로 진행할 것.
+작업순서 문서의 기준(핵심 학습 포인트는 직접 작성, 보일러플레이트는 AI 생성) 그대로 따르는 중. Entity/Repository/Security/Service/Controller 전부 사용자가 직접 작성, Claude는 리뷰(버그/설계 이슈 지적) + 개념 설명 역할만 수행.
+
+**중요 — 예시 코드 주는 방식**: 처음엔 "예시"라면서 완성된 실행 가능 코드를 통째로 줬는데, 이러면 그냥 복사·붙여넣기가 되어버려서 학습 효과가 없다는 피드백을 받음 (2026-09-23). 그 이후로는 **메서드 시그니처 + 주석 힌트만 주고 실제 구현 로직은 직접 채우게 하는 방식**으로 전환함 (예: `CategoryController`의 POST/PUT/DELETE는 시그니처와 힌트만 주고 본문은 직접 작성하게 함). 새 세션에서도 이 방식 유지할 것 — 완성 코드를 바로 주지 말고 뼈대만.
 
 ---
 
 ## 5. 다음 단계
 
-`feature/category-crud` — Category 트리 CRUD (API 명세서 3번 참고: 트리 구조 조회, 말단 카테고리만 상품 등록 가능, 하위/상품 있으면 삭제 거부).
+`feature/product-crud` (6단계) — Product CRUD. API 명세서 4번 참고: 말단 카테고리에만 등록 가능(카테고리가 하위를 가지면 400), `costPrice`/`currentStock`은 요청으로 안 받음(입고 트랜잭션으로만 증가), `sku`/`costPrice`/`currentStock`은 수정 불가.
+
+**이번 단계에서 같이 처리하면 좋을 것**: `GlobalExceptionHandler`의 `HttpRequestMethodNotSupportedException`(405) 미처리 문제 (섹션 3 참고).
