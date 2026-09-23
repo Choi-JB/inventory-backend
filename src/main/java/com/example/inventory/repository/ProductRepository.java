@@ -15,4 +15,5 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT p FROM Product p WHERE p.id = :id")
     Optional<Product> findByIdForUpdate(@Param("id") Long id);
     
+    boolean existsByCategoryId(Long categoryId);    //카테고리 존재 여부 확인
 }
