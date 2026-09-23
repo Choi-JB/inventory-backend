@@ -66,8 +66,9 @@ main - dev - feature/*
 3. `feature/entity-repository` — Entity 4종, enum 4종, Repository 4종
 4. `feature/auth-jwt-oauth` — JWT + 구글 OAuth2
 5. `feature/category-crud` — Category 트리 CRUD + 공통 예외 처리(`GlobalExceptionHandler`) 최초 도입
+6. `feature/product-crud` — Product CRUD + 검색/페이징(`Specification`) + 말단 카테고리 검증
 
-**다음 진행 예정**: `feature/product-crud` (6단계)
+**다음 진행 예정**: `feature/stock-transaction` (7단계, 가장 복잡한 단계 — 비관적 락, 가중평균, 롤백, 손익계산)
 
 ---
 
@@ -81,11 +82,17 @@ main - dev - feature/*
 - **`ddl-auto: validate`** 사용 — Entity가 Supabase에 이미 만든 테이블과 정확히 일치해야 서버가 뜸 (컬럼명, enum `@Enumerated(STRING)` 여부 등 주의).
 - **예외 처리 구조**: `BusinessException`(추상 클래스, `getCode()`/`getStatus()` 선언) → `NotFoundException`(404), `DeleteConflictException`(409)이 상속. `GlobalExceptionHandler`가 `BusinessException` 하나만 잡으면 되므로, 새 예외(`InsufficientStockException` 등, stock-transaction 단계에서 추가 예정)가 생겨도 핸들러 코드를 안 건드려도 됨.
 - **`GlobalExceptionHandler`의 catch-all(`Exception.class`) 핸들러는 반드시 로그를 남겨야 함.** 안 남기면 클라이언트도 서버 콘솔도 원인을 알 수 없음 — Spring이 `@ExceptionHandler`가 처리한 예외는 "처리됨"으로 보고 자동 에러 로그를 안 남기기 때문. `log.error("...", e)`를 꼭 추가할 것.
-- **catch-all이 프레임워크 예외까지 삼켜버리는 문제 발견**: `AuthorizationDeniedException`(`@PreAuthorize` 실패, 원래 403이어야 함), `HttpRequestMethodNotSupportedException`(잘못된 HTTP 메서드/경로, 원래 405여야 함)이 전부 catch-all에 걸려 500으로 잘못 나갔음. `AuthorizationDeniedException`은 전용 핸들러 추가해서 403으로 고침. `HttpRequestMethodNotSupportedException`(405)은 **아직 안 고침 — product-crud 단계에서 처리할 것**.
+- **catch-all이 프레임워크 예외까지 삼켜버리는 문제**: `AuthorizationDeniedException`(403), `HttpMessageNotReadableException`(요청 바디 파싱 실패, 400), `HttpRequestMethodNotSupportedException`(잘못된 HTTP 메서드/경로, 405)이 전부 catch-all에 걸려 500으로 잘못 나갔던 문제. 셋 다 전용 핸들러 추가해서 해결 완료 — **새로운 프레임워크 예외를 마주치면 일단 catch-all(500)에 걸리는지 의심하고, 맞는 상태코드로 전용 핸들러를 추가하는 패턴을 계속 적용할 것** (stock-transaction 단계에서도 비슷한 케이스 나올 수 있음).
 - **응답 DTO 패턴**: Category 생성/수정 응답을 처음엔 엔티티(`Category`) 그대로 반환했다가, 일관성을 위해 `CategoryResponse`(record, `from(Category)` 정적 팩토리) 로 리팩토링함. Product/StockTransaction도 같은 패턴(엔티티 직접 반환 금지, 응답 DTO 경유) 유지할 것.
 - **JPA dirty checking vs `save()`**: 같은 트랜잭션 안에서 `findById()`로 가져온 영속 상태 엔티티는 필드만 바꿔도 트랜잭션 커밋 시 자동 UPDATE됨(`save()` 호출 불필요, 호출해도 무해함 — 이미 관리 중인 엔티티라 `merge()`가 그대로 반환만 함). 이 원칙은 detached 엔티티(다른 트랜잭션에서 가져온 경우)에는 적용 안 되니 주의.
 - **역할(role) 변경 후 반드시 재로그인 필요**: role은 JWT 클레임에 박혀서 발급되므로, DB에서 role을 바꿔도 기존 토큰엔 반영 안 됨(API 명세서에 명시된 내용). ADMIN/STAFF 권한 테스트 시 재로그인해서 새 토큰 받아야 함 — 계정 2개 없어도 계정 1개로 role 토글하면서 양쪽 다 테스트 가능.
 - **Windows 콘솔 한글 로그 깨짐**: `gradlew bootRun` 콘솔에서 한글 로그 메시지가 깨져 보임(인코딩 문제, cp949 vs UTF-8 추정). 기능적 문제는 아니고 가독성 문제라 우선순위 낮음 — 필요시 나중에 콘솔 인코딩 설정으로 해결.
+- **`Specification.where(null)`이 이 프로젝트의 Spring Data JPA 버전에서 예전과 다르게 동작함**: 컴파일 시 `where()`가 오버로드 모호성 에러를 내고(캐스팅으로 해결), 런타임엔 아무 필터 조건도 안 붙었을 때 `Specification.where(null)`이 실제로 `null`을 반환해서 `IllegalArgumentException: Specification must not be null` 발생. **`(root, query, cb) -> cb.conjunction()`(항상 참인 조건)로 시작하는 방식으로 우회** — 버전 의존적인 동작이라 이 방식이 더 안전함. Spring Data JPA 버전이 이례적으로 최신이라(Spring Boot 4.x) 공식 문서/예제와 동작이 다를 수 있다는 점 계속 염두에 둘 것.
+- **Product 생성 시 `costPrice`/`currentStock`은 요청으로 안 받고 생성자 내부에서 하드코딩(`BigDecimal.ZERO`, `0`)으로 초기화.** Category/User 때처럼 Entity에 직접 생성자 만드는 패턴 유지. `update()` 메서드는 API 명세서상 수정 가능한 4개 필드(`name`, `sellingPrice`, `minStockLevel`, `categoryId`)만 받고 `sku`/`unit`/`costPrice`/`currentStock`은 파라미터로도 안 받음(애초에 불가능하게 설계).
+- **말단 카테고리 검증(`CategoryService.validateLeaf`)은 생성 시점뿐 아니라 수정(`categoryId` 변경) 시점에도 적용.** API 명세서엔 생성 시점만 명시돼 있었지만, "상품은 말단 카테고리에만 등록"이라는 불변조건은 항상 유지돼야 한다고 판단해서 update()에도 추가함 (명세서에 없는 빈틈을 자체 판단으로 메운 사례).
+- **검색 결과 0건은 404가 아니라 200 + `content: []`가 정답.** 에러 상황이 아니라 정상적인 "결과 없음" 상태.
+- **`lowStockOnly` 필터 테스트 시 주의**: 입고(IN) API가 아직 없어서(다음 브랜치) 모든 상품의 `currentStock`이 항상 0. `minStockLevel >= 0`인 모든 상품이 논리적으로 "재고부족" 조건(`currentStock <= minStockLevel`)을 만족하므로, 지금 단계에선 `lowStockOnly=true`가 사실상 전체 조회와 똑같이 보일 수 있음 — 버그 아님, 재고 입고 기능 생긴 뒤에 의미 있는 테스트 가능.
+- **삭제 충돌은 항상 `DeleteConflictException`(409), 검증 실패는 `ValidationException`(400)** — 한 번 헷갈려서 삭제 충돌에 `ValidationException`을 썼다가 고친 적 있음. "이미 존재하는 데이터 때문에 삭제 불가" = 409, "요청 자체의 값이 비즈니스 규칙에 안 맞음" = 400으로 구분 기준 명확히 할 것.
 
 ---
 
@@ -99,6 +106,6 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/product-crud` (6단계) — Product CRUD. API 명세서 4번 참고: 말단 카테고리에만 등록 가능(카테고리가 하위를 가지면 400), `costPrice`/`currentStock`은 요청으로 안 받음(입고 트랜잭션으로만 증가), `sku`/`costPrice`/`currentStock`은 수정 불가.
+`feature/stock-transaction` (7단계) — 작업순서 문서상 가장 복잡한 단계. IN/OUT/CONSUME/ADJUSTMENT, 비관적 락(`ProductRepository.findByIdForUpdate` 이미 만들어둠), 가중평균 매입단가 갱신, 롤백(상쇄 트랜잭션), 손익계산.
 
-**이번 단계에서 같이 처리하면 좋을 것**: `GlobalExceptionHandler`의 `HttpRequestMethodNotSupportedException`(405) 미처리 문제 (섹션 3 참고).
+**남겨진 테스트**: Product 삭제 409(DELETE_CONFLICT) — `stock_transactions`에 데이터가 생겨야 테스트 가능하므로 이 브랜치에서 IN 트랜잭션 구현 후 같이 확인할 것.
