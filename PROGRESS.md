@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-09-23
+**최종 갱신**: 2026-09-28
 
 ---
 
@@ -68,7 +68,7 @@ main - dev - feature/*
 5. `feature/category-crud` — Category 트리 CRUD + 공통 예외 처리(`GlobalExceptionHandler`) 최초 도입
 6. `feature/product-crud` — Product CRUD + 검색/페이징(`Specification`) + 말단 카테고리 검증
 
-**다음 진행 예정**: `feature/stock-transaction` (7단계, 가장 복잡한 단계 — 비관적 락, 가중평균, 롤백, 손익계산)
+**진행 중**: `feature/stock-transaction` (7단계). IN/OUT/CONSUME/ADJUSTMENT 4개 트랜잭션 타입 구현 + 테스트 완료. **아직 안 함**: 롤백(`POST /api/stock/transactions/{id}/rollback`), 조회 API 3종(`GET /api/stock/transactions`, `/transactions/{id}`, `/low-stock`), 손익계산(`GET /api/stock/profit-loss`). 다음 세션은 **롤백부터** 이어서 진행.
 
 ---
 
@@ -93,6 +93,13 @@ main - dev - feature/*
 - **검색 결과 0건은 404가 아니라 200 + `content: []`가 정답.** 에러 상황이 아니라 정상적인 "결과 없음" 상태.
 - **`lowStockOnly` 필터 테스트 시 주의**: 입고(IN) API가 아직 없어서(다음 브랜치) 모든 상품의 `currentStock`이 항상 0. `minStockLevel >= 0`인 모든 상품이 논리적으로 "재고부족" 조건(`currentStock <= minStockLevel`)을 만족하므로, 지금 단계에선 `lowStockOnly=true`가 사실상 전체 조회와 똑같이 보일 수 있음 — 버그 아님, 재고 입고 기능 생긴 뒤에 의미 있는 테스트 가능.
 - **삭제 충돌은 항상 `DeleteConflictException`(409), 검증 실패는 `ValidationException`(400)** — 한 번 헷갈려서 삭제 충돌에 `ValidationException`을 썼다가 고친 적 있음. "이미 존재하는 데이터 때문에 삭제 불가" = 409, "요청 자체의 값이 비즈니스 규칙에 안 맞음" = 400으로 구분 기준 명확히 할 것.
+- **`consumeType`(DISCARD/INTERNAL_USE/SAMPLE)은 API 명세서엔 있지만 DB 테이블 설계서엔 컬럼이 없던 빈틈.** `TransactionType`(IN/OUT/CONSUME/ADJUSTMENT)에 세부 타입을 합치지 않고, `stock_transactions.consume_type` 별도 컬럼(nullable, CHECK 제약)으로 추가함 — `type`은 "재고 증감 방향/손익 공식이 달라지는 진짜 분기 기준", `consumeType`은 "CONSUME 안에서의 사유 세분류"로 레벨이 다르다고 판단. `type`을 6개로 늘렸으면 재고 차감/롤백 등 기존 로직의 `type == CONSUME` 체크가 전부 3중 분기로 바뀌어야 했을 것.
+- **`Product` 엔티티가 자기 자신의 재고 불변조건을 스스로 지키는 패턴 확립**: `increaseStock()`(가중평균 계산), `decreaseStock()`(재고부족 체크), `adjustStock()`(실사수량으로 직접 세팅) 전부 Product 안에서 처리. OUT과 CONSUME은 "재고 차감"이라는 동일 연산이라 `decreaseStock()`을 그대로 공유(처음엔 `consumeStock()`을 따로 만들었다가 중복이라 삭제).
+- **가중평균/조정 계산 시 "필드를 먼저 바꾸면 이전 값을 잃어버리는" 패턴의 버그가 반복적으로 나옴**: `increaseStock()`, `stockAdjustment()` 둘 다 처음엔 `currentStock`을 먼저 갱신해버려서 계산식에 필요한 "갱신 전 값"이 사라지는 실수를 했음. **필드를 바꾸는 계산 로직을 짤 때는 항상 "이전 값이 이후에도 필요한가"부터 확인하고, 필요하면 변수로 먼저 저장해둘 것** — 이 프로젝트 전반에 반복 적용될 수 있는 교훈.
+- **ADJUSTMENT의 `costPriceSnapshot`은 `null`** — 손익 계산 제외 대상이라 굳이 현재 `costPrice`를 스냅샷할 이유가 없음. IN/OUT/CONSUME만 의미 있는 값을 가짐.
+- **`StockTransaction` 생성자가 타입 4종 전부를 하나로 처리**: `(productId, userId, quantity, unitPrice, costPriceSnapshot, reason, type, status, consumeType)` 9개 파라미터, 타입별로 안 쓰는 값은 호출부에서 `null` 전달. 생성자 자체는 "받은 값 그대로 필드에 대입"만 하고 계산/분기는 전혀 모름 — 계산은 전부 `Product`/`StockTransactionService`가 책임짐.
+- **JWT의 principal(문자열 userId)은 `SecurityContextHolder.getContext().getAuthentication().getName()`으로 꺼냄.** `JwtAuthenticationFilter`가 `UsernamePasswordAuthenticationToken(userId, ...)`으로 principal을 문자열로 넣어뒀기 때문. Controller마다 반복되므로 `StockTransactionController`에 `private getCurrentUserId()` 헬퍼로 통합.
+- **`@PreAuthorize`에서 여러 role 허용은 `hasAnyRole('A', 'B')`, 하나만 허용은 `hasRole('A')`.** `hasRole('A','B')`처럼 다중 인자를 넣는 건 잘못된 문법 — SpEL이라 컴파일 시점엔 안 걸리고 런타임에만 에러가 나서 주의 필요.
 
 ---
 
@@ -106,6 +113,10 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/stock-transaction` (7단계) — 작업순서 문서상 가장 복잡한 단계. IN/OUT/CONSUME/ADJUSTMENT, 비관적 락(`ProductRepository.findByIdForUpdate` 이미 만들어둠), 가중평균 매입단가 갱신, 롤백(상쇄 트랜잭션), 손익계산.
+`feature/stock-transaction` 브랜치 계속 진행 중 (아직 PR 안 올림). IN/OUT/CONSUME/ADJUSTMENT는 구현+테스트 완료. **다음 세션에서 이어서 할 것, 순서대로**:
 
-**남겨진 테스트**: Product 삭제 409(DELETE_CONFLICT) — `stock_transactions`에 데이터가 생겨야 테스트 가능하므로 이 브랜치에서 IN 트랜잭션 구현 후 같이 확인할 것.
+1. **롤백** `POST /api/stock/transactions/{id}/rollback` — 상쇄 트랜잭션 생성, 원본 `status=CANCELED` 마킹. 체크할 것 3가지: 원본이 `ADJUSTMENT`면 `RollbackNotAllowedException`, 이미 `CANCELED`면 `AlreadyCanceledException`, 롤백 적용 시 재고가 음수 되면 `RollbackConflictException`. 이 예외 3개는 아직 안 만듦 — `BusinessException` 상속 패턴 그대로.
+2. **조회 3종**: `GET /api/stock/transactions`(productId/type/status/날짜 필터 + 페이징), `GET /api/stock/transactions/{id}`, `GET /api/stock/low-stock`(이미 `ProductService.search`에 `lowStockOnly` 있으니 재사용 검토)
+3. **손익계산** `GET /api/stock/profit-loss` — `status='ACTIVE'`인 거래만 집계(CANCELED 원본·롤백 트랜잭션 자체는 제외), OUT은 `(unitPrice-costPriceSnapshot)×quantity`, CONSUME은 `costPriceSnapshot×quantity` 전액 손실, ADJUSTMENT는 집계 제외
+
+**남겨진 테스트**: Product 삭제 409(DELETE_CONFLICT) — 이제 `stock_transactions`에 데이터가 있으니 다음 세션에서 확인 가능.

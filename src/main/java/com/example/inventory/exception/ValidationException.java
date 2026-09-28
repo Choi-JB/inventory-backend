@@ -1,6 +1,7 @@
 /**
  * ValidationException - 유효성 검사 예외
  * "카테고리 하위 존재" 같은 비즈니스 규칙 검증 실패용
+ * 400 status code
  */
 package com.example.inventory.exception;
 

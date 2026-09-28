@@ -19,12 +19,14 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // 구글 OAuth sub 값 (구글이 발급하는 사용자 고유 ID)
     @Column(name = "google_id", nullable = false, unique = true)
     private String googleId;
 
     @Column(nullable = false, unique = true)
     private String email;
 
+    // ADMIN / STAFF, 기본값 STAFF (신규 가입 시 자동 부여, 승격은 DB 직접 처리)
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;
