@@ -74,8 +74,8 @@ public class StockTransaction {
     @Column(name = "consume_type", nullable = true)
     private ConsumeType consumeType;
 
-
-    public StockTransaction(Long productId, Long userId, Integer quantity, BigDecimal unitPrice, BigDecimal costPriceSnapshot, String reason, TransactionType type, TransactionStatus status, ConsumeType consumeType) {
+    //기본 생성자
+    public StockTransaction(Long productId, Long userId, Integer quantity, BigDecimal unitPrice, BigDecimal costPriceSnapshot, String reason, TransactionType type, TransactionStatus status, ConsumeType consumeType, Long reversalOfId) {
         this.productId = productId;
         this.userId = userId;
         this.quantity = quantity;
@@ -85,11 +85,22 @@ public class StockTransaction {
         this.type = type;
         this.status = status;
         this.consumeType = consumeType;
+        this.reversalOfId = reversalOfId;
     }
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+    }
+
+    /*
+     * 거래내역 취소 처리
+     * @param canceledBy 취소 처리한 사용자 ID
+     */
+    public void cancel(Long canceledBy) {
+        this.status = TransactionStatus.CANCELED;
+        this.canceledBy = canceledBy;
+        this.canceledAt = LocalDateTime.now();
     }
 
 }

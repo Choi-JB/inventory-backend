@@ -109,4 +109,26 @@ public class Product {
         this.currentStock = actualQuantity;
     }
 
+    // 재고 복구
+    public void restoreStock(Integer quantity) {
+        this.currentStock += quantity;
+    }
+
+    // 입고항목 롤백
+    public void reverseIncreaseStock(Integer quantity, BigDecimal unitPrice) {
+        if (this.currentStock < quantity) {
+            throw new InsufficientStockException("재고가 부족합니다: " + this.id);
+        }
+        
+        //재고가 0이 될경우 단가를 0원으로 설정
+        if(this.currentStock - quantity == 0) {
+            this.costPrice = BigDecimal.ZERO;
+        } else {
+            //복원된 단가 = (현재재고 × 현재단가 − 입고수량 × 입고단가) / (현재재고 − 입고수량)
+        //(currentStock * costPrice - quantity * unitPrice) / (currentStock - quantity)
+            BigDecimal newCostPrice = (this.costPrice.multiply(BigDecimal.valueOf(this.currentStock)).subtract(unitPrice.multiply(BigDecimal.valueOf(quantity)))).divide(BigDecimal.valueOf(this.currentStock - quantity), 2, RoundingMode.HALF_UP);
+            this.costPrice = newCostPrice;
+        }
+        this.currentStock -= quantity;
+    }
 }

@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-09-28
+**최종 갱신**: 2026-09-30
 
 ---
 
@@ -67,8 +67,9 @@ main - dev - feature/*
 4. `feature/auth-jwt-oauth` — JWT + 구글 OAuth2
 5. `feature/category-crud` — Category 트리 CRUD + 공통 예외 처리(`GlobalExceptionHandler`) 최초 도입
 6. `feature/product-crud` — Product CRUD + 검색/페이징(`Specification`) + 말단 카테고리 검증
+7. `feature/stock-transaction` — IN/OUT/CONSUME/ADJUSTMENT/롤백, 조회 3종, 손익계산까지 전부 구현+테스트 완료. **백엔드 코어(작업순서 문서 1~5단계) 전부 완료.**
 
-**진행 중**: `feature/stock-transaction` (7단계). IN/OUT/CONSUME/ADJUSTMENT 4개 트랜잭션 타입 구현 + 테스트 완료. **아직 안 함**: 롤백(`POST /api/stock/transactions/{id}/rollback`), 조회 API 3종(`GET /api/stock/transactions`, `/transactions/{id}`, `/low-stock`), 손익계산(`GET /api/stock/profit-loss`). 다음 세션은 **롤백부터** 이어서 진행.
+**다음**: PR 올려서 `dev`에 merge → 작업순서 문서 6단계(Next.js 프론트엔드) 착수 예정.
 
 ---
 
@@ -97,9 +98,17 @@ main - dev - feature/*
 - **`Product` 엔티티가 자기 자신의 재고 불변조건을 스스로 지키는 패턴 확립**: `increaseStock()`(가중평균 계산), `decreaseStock()`(재고부족 체크), `adjustStock()`(실사수량으로 직접 세팅) 전부 Product 안에서 처리. OUT과 CONSUME은 "재고 차감"이라는 동일 연산이라 `decreaseStock()`을 그대로 공유(처음엔 `consumeStock()`을 따로 만들었다가 중복이라 삭제).
 - **가중평균/조정 계산 시 "필드를 먼저 바꾸면 이전 값을 잃어버리는" 패턴의 버그가 반복적으로 나옴**: `increaseStock()`, `stockAdjustment()` 둘 다 처음엔 `currentStock`을 먼저 갱신해버려서 계산식에 필요한 "갱신 전 값"이 사라지는 실수를 했음. **필드를 바꾸는 계산 로직을 짤 때는 항상 "이전 값이 이후에도 필요한가"부터 확인하고, 필요하면 변수로 먼저 저장해둘 것** — 이 프로젝트 전반에 반복 적용될 수 있는 교훈.
 - **ADJUSTMENT의 `costPriceSnapshot`은 `null`** — 손익 계산 제외 대상이라 굳이 현재 `costPrice`를 스냅샷할 이유가 없음. IN/OUT/CONSUME만 의미 있는 값을 가짐.
-- **`StockTransaction` 생성자가 타입 4종 전부를 하나로 처리**: `(productId, userId, quantity, unitPrice, costPriceSnapshot, reason, type, status, consumeType)` 9개 파라미터, 타입별로 안 쓰는 값은 호출부에서 `null` 전달. 생성자 자체는 "받은 값 그대로 필드에 대입"만 하고 계산/분기는 전혀 모름 — 계산은 전부 `Product`/`StockTransactionService`가 책임짐.
+- **`StockTransaction` 생성자가 타입 4종 + 롤백까지 전부 하나로 처리**: `(productId, userId, quantity, unitPrice, costPriceSnapshot, reason, type, status, consumeType, reversalOfId)` 10개 파라미터, 안 쓰는 값은 호출부에서 `null`. `reversalOfId`가 필요해졌을 때도 별도 생성자를 새로 만들지 않고 기존 생성자에 파라미터를 추가하는 방식 유지(`consumeType` 추가 때와 동일 패턴) — "StockTransaction을 만드는 방법은 항상 하나"를 지킴.
+- **롤백 시 `Product.costPrice` 완벽 복원은 불가능, 근사 역산으로 타협**: `decreaseStock()`만 쓰면 재고 수량은 돌아와도 매입단가는 입고 반영된 채로 안 돌아옴. `reverseIncreaseStock()`을 새로 만들어 가중평균 공식을 역산(`(현재재고×현재단가 − 입고수량×입고단가) / (현재재고−입고수량)`)해서 근사 복원. **이 역산은 그 입고 이후 다른 입고가 없었을 때만 정확** — 완벽하게 하려면 입고 lot별 추적(FIFO/LIFO)이 필요한데 범위 밖으로 판단. 재고가 정확히 0이 되는 롤백은 0-나누기 위험 있어 별도 분기 처리함.
+- **"롤백의 롤백" 방지**: 롤백으로 생성된 상쇄 트랜잭션(`reversalOfId != null`)은 다시 롤백 불가 처리. 이 체크를 처음엔 타입 분기(`if type==IN ... else ...`) 안쪽에 넣는 실수를 했는데, 그러면 IN 타입 분기가 이 체크를 아예 건너뛰어서 절반만 막히는 버그가 됐음 — **"이 거래가 롤백 가능한 상태인가"를 따지는 검증은 전부 1단계(조회 직후) 한곳에 모아야 함**, 타입별 처리 로직과 섞으면 이런 누락이 생기기 쉬움.
+- **`StockTransactionRepository`에 `findByIdForUpdate`를 이름만 따라 만들었다가 서버 기동 실패할 뻔함**: `@Lock`/`@Query` 없이 이름만 지으면 Spring Data가 "IdForUpdate"라는 존재하지 않는 필드로 해석하려다 실패 — 컴파일은 통과하고 **런타임(기동 시)에만 에러가 남**. `StockTransaction` 자체는 잠글 필요가 없어서(재고를 바꾸는 건 `Product`뿐) 평범한 `findById`로 대체.
+- **롤백 API의 거래 id는 URL 경로(`/api/stock/transactions/{id}/rollback`)로만 받고 요청 바디엔 `reason`만.** 처음엔 `RollbackRequest`에 `id` 필드를 넣고 `@PathVariable`도 안 썼다가, "URL에 이미 있는 정보를 바디에 중복 요구"하는 설계 오류로 지적받고 수정함.
 - **JWT의 principal(문자열 userId)은 `SecurityContextHolder.getContext().getAuthentication().getName()`으로 꺼냄.** `JwtAuthenticationFilter`가 `UsernamePasswordAuthenticationToken(userId, ...)`으로 principal을 문자열로 넣어뒀기 때문. Controller마다 반복되므로 `StockTransactionController`에 `private getCurrentUserId()` 헬퍼로 통합.
 - **`@PreAuthorize`에서 여러 role 허용은 `hasAnyRole('A', 'B')`, 하나만 허용은 `hasRole('A')`.** `hasRole('A','B')`처럼 다중 인자를 넣는 건 잘못된 문법 — SpEL이라 컴파일 시점엔 안 걸리고 런타임에만 에러가 나서 주의 필요.
+- **`reversalOfId IS NULL` 필터(`excludeReversal()`)는 손익계산 전용 쿼리에만 적용, 일반 거래 목록 조회(`GET /api/stock/transactions`)엔 적용 안 함.** 처음에 공용 `search()` 메서드 안에 넣었다가, 그러면 일반 이력 조회에서도 롤백 트랜잭션이 안 보이게 되어버려서(이력 추적 API의 목적과 어긋남) 분리함 — "손익 집계"와 "이력 조회"는 같은 테이블을 보지만 요구사항이 다르다는 걸 놓치기 쉬움.
+- **프레임워크 예외 처리 패턴이 정착됨**: 테스트하다 500 뜨면 → 콘솔 로그에서 실제 예외 클래스 확인 → `GlobalExceptionHandler`에 `@ExceptionHandler(그예외.class)`로 전용 핸들러 추가 → 적절한 상태코드/메시지 매핑. 이번 브랜치에서 `HttpMessageNotReadableException`, `HttpRequestMethodNotSupportedException`, `MissingServletRequestParameterException` 세 개를 이 패턴으로 추가함. 예외 객체가 자체적으로 갖고 있는 정보(`e.getParameterName()` 등)를 활용하면 `e.getMessage()`(스프링 기본 영문 메시지)보다 깔끔한 에러 메시지를 만들 수 있음.
+- **테스트 중 이상한 데이터를 발견하면, 먼저 "지금 코드로 재현되는 버그인지 vs 예전 테스트 데이터의 잔재인지"부터 구분할 것.** 손익계산에서 `costPriceSnapshot`이 null인 원본 OUT 거래 때문에 NPE가 났는데, 알고 보니 그 레코드는 몇 번의 버그 수정 이전(반복 테스트 중)에 만들어진 것이었음 — 현재 코드로는 재현 불가능한, DB에 남은 낡은 데이터였음. 장시간 반복 디버깅 세션 후엔 테스트 데이터 정리도 고려할 것.
+- **`byProduct`(상품별 손익) 집계는 `Collectors.groupingBy(분류기준, Collectors.reducing(초기값, 변환함수, 합산함수))` 패턴 사용.** 단순 `groupingBy`는 `Map<Key, List<Entity>>`를 주지만, 여기선 `Map<Long, BigDecimal>`(그룹별 합계 하나)이 필요해서 downstream collector로 `reducing`을 조합함 — 이 프로젝트에서 가장 복잡한 스트림 사용 사례.
 
 ---
 
@@ -113,10 +122,8 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/stock-transaction` 브랜치 계속 진행 중 (아직 PR 안 올림). IN/OUT/CONSUME/ADJUSTMENT는 구현+테스트 완료. **다음 세션에서 이어서 할 것, 순서대로**:
+`feature/stock-transaction` 브랜치 기능/테스트 전부 완료, **PR만 남음**. 이 브랜치가 merge되면 작업순서 문서의 백엔드 코어(1~5단계)가 전부 끝나는 것 — 다음 세션 목표는:
 
-1. **롤백** `POST /api/stock/transactions/{id}/rollback` — 상쇄 트랜잭션 생성, 원본 `status=CANCELED` 마킹. 체크할 것 3가지: 원본이 `ADJUSTMENT`면 `RollbackNotAllowedException`, 이미 `CANCELED`면 `AlreadyCanceledException`, 롤백 적용 시 재고가 음수 되면 `RollbackConflictException`. 이 예외 3개는 아직 안 만듦 — `BusinessException` 상속 패턴 그대로.
-2. **조회 3종**: `GET /api/stock/transactions`(productId/type/status/날짜 필터 + 페이징), `GET /api/stock/transactions/{id}`, `GET /api/stock/low-stock`(이미 `ProductService.search`에 `lowStockOnly` 있으니 재사용 검토)
-3. **손익계산** `GET /api/stock/profit-loss` — `status='ACTIVE'`인 거래만 집계(CANCELED 원본·롤백 트랜잭션 자체는 제외), OUT은 `(unitPrice-costPriceSnapshot)×quantity`, CONSUME은 `costPriceSnapshot×quantity` 전액 손실, ADJUSTMENT는 집계 제외
-
-**남겨진 테스트**: Product 삭제 409(DELETE_CONFLICT) — 이제 `stock_transactions`에 데이터가 있으니 다음 세션에서 확인 가능.
+1. `feature/stock-transaction` PR 생성 → 셀프 리뷰 → `dev` merge
+2. 작업순서 문서 6단계 — **Next.js 프론트엔드** 착수 (레포구성_브랜치전략 문서 기준 `inventory-frontend` 별도 레포, `feature/frontend-minimal` 브랜치부터)
+3. 프론트엔드 완성 후 → 챗봇 명세서 작성 및 구현 (Gemini function calling, RAG)

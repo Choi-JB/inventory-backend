@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 
 //@RestController에서 발생한 예외를 가로채는 전역 처리기
 @RestControllerAdvice
@@ -58,6 +59,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMethodNotAllowed(HttpRequestMethodNotSupportedException e) {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(ErrorResponse.of("METHOD_NOT_ALLOWED", "지원되지 않는 메서드입니다."));
+    }
+
+    // 날짜 형식 예외 처리
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingServletRequestParameter(MissingServletRequestParameterException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("VALIDATION_ERROR", e.getParameterName()+"은(는) 필수 파라미터입니다."));
     }
 
     // 그 외 예외 처리

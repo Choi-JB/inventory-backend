@@ -1,5 +1,6 @@
 package com.example.inventory.dto.request;
 
-public class RollbackRequest {
-    
+public record RollbackRequest (
+    String reason
+) {
 }

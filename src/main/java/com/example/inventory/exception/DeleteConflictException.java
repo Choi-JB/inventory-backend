@@ -1,5 +1,6 @@
 /**
  * Custom exception for delete conflict
+ * 삭제 충돌 예외
  * 409 status code
  */
 package com.example.inventory.exception;
