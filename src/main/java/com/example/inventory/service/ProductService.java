@@ -8,7 +8,6 @@ package com.example.inventory.service;
 
 import org.springframework.stereotype.Service;
 import com.example.inventory.repository.ProductRepository;
-import com.example.inventory.service.CategoryService;
 import com.example.inventory.repository.StockTransactionRepository;
 import org.springframework.data.jpa.domain.Specification;
 import com.example.inventory.entity.Product;

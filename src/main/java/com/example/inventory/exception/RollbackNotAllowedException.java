@@ -1,25 +1,25 @@
 /**
- * Custom exception for delete conflict
- * 삭제 충돌 예외
+ * RollbackNotAllowedException - 롤백 불가 예외
  * 409 status code
  */
 package com.example.inventory.exception;
 
 import org.springframework.http.HttpStatus;
 
-public class DeleteConflictException extends BusinessException {
+public class RollbackNotAllowedException extends BusinessException {
 
-    public DeleteConflictException(String message) {
+    public RollbackNotAllowedException(String message) {
         super(message);
     }
 
     @Override
     public String getCode() {
-        return "DELETE_CONFLICT";
+        return "ROLLBACK_NOT_ALLOWED";
     }
 
     @Override
     public HttpStatus getStatus() {
         return HttpStatus.CONFLICT;
     }
+    
 }

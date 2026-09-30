@@ -9,7 +9,6 @@ import com.example.inventory.service.CategoryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.example.inventory.entity.Category;
 import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.Valid;
 import com.example.inventory.dto.request.CategoryCreateRequest;
@@ -66,4 +65,6 @@ public class CategoryController {
         categoryService.delete(id);
         return ResponseEntity.noContent().build ();
     }
+
+
 }

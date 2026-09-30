@@ -1,21 +1,16 @@
-/**
- * Custom exception for delete conflict
- * 삭제 충돌 예외
- * 409 status code
- */
 package com.example.inventory.exception;
 
 import org.springframework.http.HttpStatus;
 
-public class DeleteConflictException extends BusinessException {
+public class AlreadyCanceledException extends BusinessException {
 
-    public DeleteConflictException(String message) {
+    public AlreadyCanceledException(String message) {
         super(message);
     }
 
     @Override
     public String getCode() {
-        return "DELETE_CONFLICT";
+        return "ALREADY_CANCELED";
     }
 
     @Override

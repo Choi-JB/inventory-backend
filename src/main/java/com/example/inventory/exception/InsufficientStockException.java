@@ -1,21 +1,20 @@
 /**
- * Custom exception for delete conflict
- * 삭제 충돌 예외
+ * InsufficientStockException - 재고 부족 예외
  * 409 status code
  */
 package com.example.inventory.exception;
 
 import org.springframework.http.HttpStatus;
 
-public class DeleteConflictException extends BusinessException {
+public class InsufficientStockException extends BusinessException {
 
-    public DeleteConflictException(String message) {
+    public InsufficientStockException(String message) {
         super(message);
     }
 
     @Override
     public String getCode() {
-        return "DELETE_CONFLICT";
+        return "INSUFFICIENT_STOCK";
     }
 
     @Override
