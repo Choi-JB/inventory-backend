@@ -27,6 +27,7 @@ import com.example.inventory.enums.TransactionType;
 import com.example.inventory.enums.TransactionStatus;
 import com.example.inventory.dto.response.ProductResponse;
 import com.example.inventory.dto.response.ProfitLossResponse;
+import com.example.inventory.security.SecurityUtils;
 
 @RestController
 @RequestMapping("/api/stock")
@@ -43,7 +44,7 @@ public class StockTransactionController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     @PostMapping("/in")
     public ResponseEntity<StockTransactionResponse> stockIn(@Valid @RequestBody StockInRequest request) {
-        Long userId = getCurrentUserId();
+        Long userId = SecurityUtils.getCurrentUserId();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService.stockIn(request.productId(),
                 userId, request.quantity(), request.unitPrice(), request.reason()));
@@ -53,7 +54,7 @@ public class StockTransactionController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     @PostMapping("/out")
     public ResponseEntity<StockTransactionResponse> stockOut(@Valid @RequestBody StockOutRequest request) {
-        Long userId = getCurrentUserId();
+        Long userId = SecurityUtils.getCurrentUserId();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService.stockOut(request.productId(),
                 userId, request.quantity(), request.unitPrice(), request.reason()));
@@ -63,7 +64,7 @@ public class StockTransactionController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     @PostMapping("/consume")
     public ResponseEntity<StockTransactionResponse> stockConsume(@Valid @RequestBody StockConsumeRequest request) {
-        Long userId = getCurrentUserId();
+        Long userId = SecurityUtils.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService.stockConsume(request.productId(),
                 userId, request.quantity(), request.reason(), request.consumeType()));
     }
@@ -73,7 +74,7 @@ public class StockTransactionController {
     @PostMapping("/adjustment")
     public ResponseEntity<StockTransactionResponse> stockAdjustment(
             @Valid @RequestBody StockAdjustmentRequest request) {
-        Long userId = getCurrentUserId();
+        Long userId = SecurityUtils.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService
                 .stockAdjustment(request.productId(), userId, request.actualQuantity(), request.reason()));
     }
@@ -84,7 +85,7 @@ public class StockTransactionController {
     public ResponseEntity<StockTransactionResponse> rollbackStockTransaction(
             @PathVariable Long id, //거래내역 id
             @Valid @RequestBody RollbackRequest request) { //복구 이유
-                Long userId = getCurrentUserId();
+                Long userId = SecurityUtils.getCurrentUserId();
         StockTransactionResponse stockTransaction = stockTransactionService.rollback(userId, id, request);
         return ResponseEntity.status(HttpStatus.OK).body(stockTransaction);
     }
@@ -125,12 +126,6 @@ public class StockTransactionController {
         @RequestParam(required = true) LocalDateTime endDate,
         @RequestParam(required = false) Long productId) {
         return ResponseEntity.status(HttpStatus.OK).body(stockTransactionService.getProfitLoss(startDate, endDate, productId));
-    }
-
-    // 현재 사용자 ID 가져오기
-    private Long getCurrentUserId() {
-        String userIdStr = SecurityContextHolder.getContext().getAuthentication().getName();
-        return Long.valueOf(userIdStr);
     }
 
 }

@@ -1,6 +1,7 @@
 /**
  * JWT 토큰 인증 필터
  * 매 요청마다 Authorization: Bearer {JWT} 헤더를 읽어 검증 후 
+ * express에서 middleware 같은 역할을 하는 필터
  * SecurityContext에 인증 정보 세팅 — OncePerRequestFilter 상속
  * SecurityContext 에 등록된 Authentication 객체는 주로 사용자의 접근 권한을 확인
  */
