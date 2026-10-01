@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-09-30
+**최종 갱신**: 2026-10-01
 
 ---
 
@@ -69,7 +69,9 @@ main - dev - feature/*
 6. `feature/product-crud` — Product CRUD + 검색/페이징(`Specification`) + 말단 카테고리 검증
 7. `feature/stock-transaction` — IN/OUT/CONSUME/ADJUSTMENT/롤백, 조회 3종, 손익계산까지 전부 구현+테스트 완료. **백엔드 코어(작업순서 문서 1~5단계) 전부 완료.**
 
-**다음**: PR 올려서 `dev`에 merge → 작업순서 문서 6단계(Next.js 프론트엔드) 착수 예정.
+**진행 중**: `feature/frontend-integration` (`inventory-backend` 레포) — 프론트엔드 연결 전 백엔드 선작업. CORS 설정, 구글 로그인 콜백을 JSON 응답 대신 HttpOnly 쿠키+리다이렉트 방식으로 전환, `JwtAuthenticationFilter`가 쿠키에서도 토큰을 읽도록 수정. 전부 구현+테스트 완료.
+
+**다음**: PR 올려서 `dev`에 merge → 작업순서 문서 6단계(Next.js 프론트엔드, `inventory-frontend` 레포) 착수.
 
 ---
 
@@ -109,6 +111,12 @@ main - dev - feature/*
 - **프레임워크 예외 처리 패턴이 정착됨**: 테스트하다 500 뜨면 → 콘솔 로그에서 실제 예외 클래스 확인 → `GlobalExceptionHandler`에 `@ExceptionHandler(그예외.class)`로 전용 핸들러 추가 → 적절한 상태코드/메시지 매핑. 이번 브랜치에서 `HttpMessageNotReadableException`, `HttpRequestMethodNotSupportedException`, `MissingServletRequestParameterException` 세 개를 이 패턴으로 추가함. 예외 객체가 자체적으로 갖고 있는 정보(`e.getParameterName()` 등)를 활용하면 `e.getMessage()`(스프링 기본 영문 메시지)보다 깔끔한 에러 메시지를 만들 수 있음.
 - **테스트 중 이상한 데이터를 발견하면, 먼저 "지금 코드로 재현되는 버그인지 vs 예전 테스트 데이터의 잔재인지"부터 구분할 것.** 손익계산에서 `costPriceSnapshot`이 null인 원본 OUT 거래 때문에 NPE가 났는데, 알고 보니 그 레코드는 몇 번의 버그 수정 이전(반복 테스트 중)에 만들어진 것이었음 — 현재 코드로는 재현 불가능한, DB에 남은 낡은 데이터였음. 장시간 반복 디버깅 세션 후엔 테스트 데이터 정리도 고려할 것.
 - **`byProduct`(상품별 손익) 집계는 `Collectors.groupingBy(분류기준, Collectors.reducing(초기값, 변환함수, 합산함수))` 패턴 사용.** 단순 `groupingBy`는 `Map<Key, List<Entity>>`를 주지만, 여기선 `Map<Long, BigDecimal>`(그룹별 합계 하나)이 필요해서 downstream collector로 `reducing`을 조합함 — 이 프로젝트에서 가장 복잡한 스트림 사용 사례.
+- **인증 토큰 전달 방식: HttpOnly 쿠키로 결정 (localStorage+Authorization 헤더 대신).** 이유는 XSS 공격 시 `localStorage`는 자바스크립트로 읽혀서 토큰이 털리지만, `HttpOnly` 쿠키는 JS가 아예 접근 불가. 대신 `JwtAuthenticationFilter`가 쿠키에서도 토큰을 읽도록 수정 필요했음(기존엔 `Authorization` 헤더만 봤음) — Authorization 헤더 체크를 우선시하고 없으면 쿠키로 폴백하는 구조라 Postman 테스트(헤더 방식)도 계속 호환됨.
+- **`SameSite=None`은 반드시 `Secure=true`와 같이 써야 함 — 아니면 브라우저가 쿠키 저장 자체를 거부.** 로컬 개발(http)에선 `Secure=true`를 못 쓰므로, 대신 `SameSite=Lax`를 사용함 — `localhost:3000`과 `localhost:8080`은 포트만 다르고 도메인이 같아 브라우저의 "same-site" 판정상 같은 사이트로 취급되므로 `Lax`로 충분함. **배포해서 프론트/백엔드가 완전히 다른 도메인이 되면 그때 `None`+`Secure(true)`+HTTPS 조합으로 바꿔야 함.**
+- **CORS는 cross-origin `fetch`/XHR에만 적용되고, 전체 페이지 리다이렉트(브라우저 주소창 이동, OAuth 리다이렉트 등)에는 적용 안 됨.** 그래서 CORS 설정 자체는 실제 Next.js 프론트엔드가 `fetch(..., {credentials:'include'})`로 호출해봐야 제대로 검증됨 — 지금은 설정만 해두고 실전 검증은 프론트엔드 붙인 뒤로 미룸.
+- **구글 로그인 시 생기는 `JSESSIONID` 쿠키는 우리 앱의 로그인 상태와 무관.** OAuth2 인가 코드 플로우 자체가 핸드셰이크 중 state 값을 저장할 서버 세션을 필요로 해서(`SessionCreationPolicy.IF_REQUIRED` 때문에) 생기는 부산물. 이후 모든 API 인증은 `accessToken` 쿠키(JWT)로만 이루어지고 세션은 안 봄 — 신경 쓸 필요 없음.
+- **`frontend.url`처럼 환경마다 달라지는(비밀은 아닌) 값은 `application.yaml`에 기본값을 두고 배포 시 환경변수로 덮어쓰는 방식 채택.** `application-local.yaml`은 "비밀값 전용"이 아니라 "환경별 설정 전용"이라는 더 넓은 개념이지만, 이 프로젝트처럼 혼자 하는 경우 매번 새로 설정하는 번거로움을 줄이는 쪽을 택함.
+- **YAML 들여쓰기 실수가 이번엔 반대 방향으로 또 발생**: `frontend:`를 `spring:` **안에** 잘못 넣어서 실제 경로가 `spring.frontend.url`이 되어버림 (`@Value("${frontend.url}")`는 최상위 경로를 찾아서 플레이스홀더 에러). 예전엔 반대로 `security:`를 `spring:` **밖에** 둬서 문제였음 — 둘 다 같은 원인(YAML 들여쓰기 레벨)이니 설정 추가할 때마다 들여쓰기를 한 번 더 확인하는 습관이 필요함.
 
 ---
 
@@ -122,8 +130,11 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/stock-transaction` 브랜치 기능/테스트 전부 완료, **PR만 남음**. 이 브랜치가 merge되면 작업순서 문서의 백엔드 코어(1~5단계)가 전부 끝나는 것 — 다음 세션 목표는:
+`feature/frontend-integration` 브랜치(`inventory-backend` 레포) 기능/테스트 전부 완료, **PR만 남음**. 다음 세션 목표:
 
-1. `feature/stock-transaction` PR 생성 → 셀프 리뷰 → `dev` merge
+1. `feature/frontend-integration` PR 생성 → 셀프 리뷰 → `dev` merge
 2. 작업순서 문서 6단계 — **Next.js 프론트엔드** 착수 (레포구성_브랜치전략 문서 기준 `inventory-frontend` 별도 레포, `feature/frontend-minimal` 브랜치부터)
+   - 프론트엔드에서 백엔드 API 호출 시 `fetch(..., { credentials: 'include' })` 잊지 말 것 — 안 넣으면 쿠키가 안 실려서 인증 실패
+   - 로그인 버튼 → `http://localhost:8080/oauth2/authorization/google`로 이동시키면 됨 (전체 페이지 이동, `fetch` 아님)
+   - 로그인 성공 후 `localhost:3000`으로 리다이렉트되는데, 이 시점에 유저 정보(이메일/role)가 필요하면 별도로 `GET /api/auth/me` 같은 엔드포인트를 추가해야 할 수도 있음 — 지금은 쿠키에 JWT만 있고 프론트가 유저 정보를 바로 알 방법은 없음 (필요해지면 그때 추가)
 3. 프론트엔드 완성 후 → 챗봇 명세서 작성 및 구현 (Gemini function calling, RAG)

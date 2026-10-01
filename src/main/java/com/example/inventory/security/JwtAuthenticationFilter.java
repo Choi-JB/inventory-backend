@@ -19,6 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.List;
+import jakarta.servlet.http.Cookie;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {//요청당 딱 한 번만 실행되는 필터
@@ -34,6 +35,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {//요청당 �
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             return header.substring(7);
+        }
+        //쿠키에서 토큰 추출
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (cookie.getName().equals("accessToken")) {
+                    return cookie.getValue();
+                }
+            }
         }
         return null;
     }

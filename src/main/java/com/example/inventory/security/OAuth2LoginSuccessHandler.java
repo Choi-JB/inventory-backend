@@ -16,14 +16,23 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
+import java.time.Duration;
 
 @Component
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler{
 
     private final AuthService authService;
     private final ObjectMapper objectMapper;
+    @Value("${jwt.expiration}")
+    private long expirationMs;
+
+    @Value("${frontend.url}")
+    private String frontendUrl;
 
     public OAuth2LoginSuccessHandler(
             AuthService authService,
@@ -48,8 +57,19 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler{
 
         LoginResponse loginResponse = authService.loginWithGoogle(googleId, email);
 
-        response.setStatus(HttpServletResponse.SC_OK);
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(objectMapper.writeValueAsString(loginResponse));
+        //postman 테스트 시 사용
+        //response.setStatus(HttpServletResponse.SC_OK);
+        //response.setContentType("application/json;charset=UTF-8");
+        //response.getWriter().write(objectMapper.writeValueAsString(loginResponse));
+
+        ResponseCookie cookie = ResponseCookie.from("accessToken", loginResponse.accessToken())
+            .httpOnly(true)
+            .secure(false)  //https 아닐 때 사용, 배포 때는 ture
+            .sameSite("Lax") //cross-site 쿠키 전송 허용, 배포 때는 None
+            .path("/")
+            .maxAge(Duration.ofMillis(expirationMs))
+            .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        response.sendRedirect(frontendUrl);
     }
 }

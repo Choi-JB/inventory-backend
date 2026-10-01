@@ -11,3 +11,6 @@ spring:
       hibernate:
         format_sql: true
     show-sql: true
+
+frontend:
+  url: http://localhost:3000
