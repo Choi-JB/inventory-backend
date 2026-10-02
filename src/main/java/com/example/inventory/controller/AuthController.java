@@ -15,7 +15,10 @@ import com.example.inventory.dto.response.LoginResponse;
 import com.example.inventory.entity.User;
 import com.example.inventory.exception.NotFoundException;
 import jakarta.servlet.http.HttpServletResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
+@Tag(name = "인증", description = "로그인 사용자 확인, 로그아웃 (구글 로그인은 /oauth2/authorization/google 로 브라우저 이동)")
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -27,6 +30,7 @@ public class AuthController {
 
     //GET /api/auth/me: SecurityContextHolder
     //id, email, role 반환
+    @Operation(summary = "내 정보 조회", description = "쿠키의 JWT로 인증된 현재 사용자의 id, email, role을 반환합니다. 로그인하지 않았으면 401.")
     @GetMapping("/me")
     public ResponseEntity<LoginResponse.UserInfo> getMe() {
         Long userId = SecurityUtils.getCurrentUserId();
@@ -36,6 +40,7 @@ public class AuthController {
     }
 
     //POST /api/auth/logout
+    @Operation(summary = "로그아웃", description = "accessToken 쿠키를 만료시켜 브라우저가 삭제하도록 합니다.")
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from("accessToken", "")

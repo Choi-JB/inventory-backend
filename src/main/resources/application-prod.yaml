@@ -1,0 +1,6 @@
+# springdoc api 문서 접근 가능, 나중에는 외부에서 접근 못하게 해야함 (false로 설정)
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
