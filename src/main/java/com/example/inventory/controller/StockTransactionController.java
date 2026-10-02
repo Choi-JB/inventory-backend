@@ -16,7 +16,8 @@ import com.example.inventory.dto.request.StockConsumeRequest;
 import com.example.inventory.dto.request.StockAdjustmentRequest;
 import com.example.inventory.dto.response.StockTransactionResponse;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.context.SecurityContextHolder;
+import com.example.inventory.dto.response.PageResponse;
+import org.springdoc.core.annotations.ParameterObject;
 import com.example.inventory.dto.request.RollbackRequest;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -102,14 +103,14 @@ public class StockTransactionController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     @Operation(summary = "거래내역 목록 조회", description = "productId, type, status, 기간(startDate~endDate) 조건을 선택적으로 조합하고 페이징합니다. 롤백 트랜잭션도 포함됩니다.")
     @GetMapping("/transactions")
-    public ResponseEntity<Page<StockTransactionResponse>> getTransactions(
+    public ResponseEntity<PageResponse<StockTransactionResponse>> getTransactions(
         @RequestParam(required = false) Long productId,
         @RequestParam(required = false) TransactionType type,
         @RequestParam(required = false) TransactionStatus status,
         @RequestParam(required = false) LocalDateTime startDate,
         @RequestParam(required = false) LocalDateTime endDate,
-        Pageable pageable) {
-        return ResponseEntity.status(HttpStatus.OK).body(stockTransactionService.search(productId, type, status, startDate, endDate, pageable));
+        @ParameterObject Pageable pageable) {
+        return ResponseEntity.status(HttpStatus.OK).body(PageResponse.from(stockTransactionService.search(productId, type, status, startDate, endDate, pageable)));
     }
 
     //GET /api/stock/transactions/{id} [id로 거래내역 조회]
@@ -124,9 +125,9 @@ public class StockTransactionController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     @Operation(summary = "재고 부족 상품 목록", description = "currentStock이 minStockLevel 이하인 상품을 페이징하여 반환합니다.")
     @GetMapping("/low-stock")
-    public ResponseEntity<Page<ProductResponse>> getLowStockProducts(
-        Pageable pageable) {
-            return ResponseEntity.ok(productService.search(null, null, true, pageable));
+    public ResponseEntity<PageResponse<ProductResponse>> getLowStockProducts(
+        @ParameterObject Pageable pageable) {
+            return ResponseEntity.ok(PageResponse.from(productService.search(null, null, true, pageable)));
     }
 
     //GET /api/stock/profit-loss [수익/손실 조회]

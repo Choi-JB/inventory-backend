@@ -5,8 +5,8 @@
 package com.example.inventory.controller;
 
 import com.example.inventory.dto.response.ProductResponse;
+import com.example.inventory.dto.response.PageResponse;
 import com.example.inventory.service.ProductService;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +17,7 @@ import com.example.inventory.dto.request.ProductUpdateRequest;
 import org.springframework.http.HttpStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springdoc.core.annotations.ParameterObject;
 
 @Tag(name = "상품", description = "상품 조회/검색 및 관리 (등록/수정/삭제는 ADMIN 전용)")
 @RestController
@@ -31,12 +32,12 @@ public class ProductController {
     // GET /api/products — 인증만 필요, 목록 조회
     @Operation(summary = "상품 목록 검색", description = "keyword(이름/SKU 부분일치), categoryId(하위 카테고리 포함), lowStockOnly 조건을 선택적으로 조합하고 페이징합니다.")
     @GetMapping
-    public ResponseEntity<Page<ProductResponse>> getProducts(
+    public ResponseEntity<PageResponse<ProductResponse>> getProducts(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Boolean lowStockOnly,
-            Pageable pageable) {
-        return ResponseEntity.ok(productService.search(keyword, categoryId, lowStockOnly, pageable));
+            @ParameterObject Pageable pageable) {
+        return ResponseEntity.ok(PageResponse.from(productService.search(keyword, categoryId, lowStockOnly, pageable)));
     }
 
     // GET /api/products/{id} — 인증만 필요, 단건 상세
