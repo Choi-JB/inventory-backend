@@ -62,6 +62,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/me").authenticated() // /api/auth/me 경로는 인증 필요
                 .requestMatchers("/api/auth/**").permitAll()   // 인증 없이 접근 가능한 경로
+                .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll() //springdoc api 문서 접근 가능, 나중에는 외부에서 접근 못하게 해야함
                 .anyRequest().authenticated()   // 나머지 요청은 인증 필요
             )
             .oauth2Login(oauth2 -> oauth2
