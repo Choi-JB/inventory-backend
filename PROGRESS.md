@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-10-01 (세션 기반 인증 우회 버그 수정 포함)
+**최종 갱신**: 2026-10-02 (springdoc 도입, 페이징 응답 형식 수정 포함)
 
 ---
 
@@ -68,11 +68,13 @@ main - dev - feature/*
 5. `feature/category-crud` — Category 트리 CRUD + 공통 예외 처리(`GlobalExceptionHandler`) 최초 도입
 6. `feature/product-crud` — Product CRUD + 검색/페이징(`Specification`) + 말단 카테고리 검증
 7. `feature/stock-transaction` — IN/OUT/CONSUME/ADJUSTMENT/롤백, 조회 3종, 손익계산까지 전부 구현+테스트 완료. **백엔드 코어(작업순서 문서 1~5단계) 전부 완료.**
-8. `feature/frontend-integration` — 프론트엔드 연결 전 백엔드 선작업 1차. CORS 설정, 구글 로그인 콜백을 JSON 응답 대신 HttpOnly 쿠키+리다이렉트 방식으로 전환, `JwtAuthenticationFilter`가 쿠키에서도 토큰을 읽도록 수정.
+8. `feature/frontend-integration` (PR #6) — 프론트엔드 연결 전 백엔드 선작업 1차. CORS 설정, 구글 로그인 콜백을 JSON 응답 대신 HttpOnly 쿠키+리다이렉트 방식으로 전환, `JwtAuthenticationFilter`가 쿠키에서도 토큰을 읽도록 수정.
+9. `feature/auth-me-logout` (PR #7) — 프론트엔드 선작업 2차. `AuthController`(`GET /api/auth/me`, `POST /api/auth/logout`) 신설, 인증 안 된 API 요청에 401 JSON 응답(커스텀 `AuthenticationEntryPoint`), **세션 기반 인증 정보 자동 복원 차단**(`RequestAttributeSecurityContextRepository`, 아래 3번 참고).
+10. `feature/springdoc` (PR #8) — springdoc 3.x(Swagger UI, `/v3/api-docs`) 도입, 컨트롤러 4개에 `@Tag`/`@Operation` 추가, prod 프로필에서 문서 비활성화(`application-prod.yaml`).
 
-**진행 중**: `feature/auth-me-logout` — 프론트엔드 선작업 2차. `AuthController`(`GET /api/auth/me`, `POST /api/auth/logout`) 신설, 인증 안 된 API 요청에 401 JSON 응답(커스텀 `AuthenticationEntryPoint`), **세션 기반 인증 정보 자동 복원 차단**(`RequestAttributeSecurityContextRepository`, 아래 3번 참고). 전부 구현+테스트 완료, PR만 남음.
+**진행 중**: `feature/page-response` — 스펙 확인 중 발견한 페이징 응답 형식 불일치 수정. `PageResponse<T>` 도입(명세서 1장 형식), 페이징 엔드포인트 3곳이 이를 반환, `Pageable`에 `@ParameterObject` 추가. 구현 완료, 스펙(`/v3/api-docs`) 확인 완료, PR만 남음.
 
-**다음**: PR 올려서 `dev`에 merge → 작업순서 문서 6단계(Next.js 프론트엔드, `inventory-frontend` 레포) 착수.
+**다음**: PR merge 후 → 작업순서 문서 6단계(Next.js 프론트엔드) 계속 진행. 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
 
 ---
 
@@ -123,6 +125,14 @@ main - dev - feature/*
   - **교훈**: `SessionCreationPolicy`를 `STATELESS`가 아닌 걸로 설정하면, 의도치 않게 스프링의 "세션 기반 인증 정보 자동 영속화" 기본 동작이 같이 켜진다는 걸 몰랐음. JWT만으로 완전히 stateless한 인증을 하려면 `SecurityContextRepository`도 명시적으로 신경 써야 함 — 세션 생성 정책(`SessionCreationPolicy`)과 인증정보 영속화 방식(`SecurityContextRepository`)은 별개의 설정이라는 걸 기억할 것.
 - **`frontend.url`처럼 환경마다 달라지는(비밀은 아닌) 값은 `application.yaml`에 기본값을 두고 배포 시 환경변수로 덮어쓰는 방식 채택.** `application-local.yaml`은 "비밀값 전용"이 아니라 "환경별 설정 전용"이라는 더 넓은 개념이지만, 이 프로젝트처럼 혼자 하는 경우 매번 새로 설정하는 번거로움을 줄이는 쪽을 택함.
 - **YAML 들여쓰기 실수가 이번엔 반대 방향으로 또 발생**: `frontend:`를 `spring:` **안에** 잘못 넣어서 실제 경로가 `spring.frontend.url`이 되어버림 (`@Value("${frontend.url}")`는 최상위 경로를 찾아서 플레이스홀더 에러). 예전엔 반대로 `security:`를 `spring:` **밖에** 둬서 문제였음 — 둘 다 같은 원인(YAML 들여쓰기 레벨)이니 설정 추가할 때마다 들여쓰기를 한 번 더 확인하는 습관이 필요함.
+- **springdoc 버전: Spring Boot 4.x는 springdoc 3.x 라인 필요** (`springdoc-openapi-starter-webmvc-ui:3.0.x`). Boot 3.x용 2.x를 쓰면 기동 에러나 Swagger UI 404. `@Tag`의 import는 `io.swagger.v3.oas.annotations.tags.Tag`(중간에 `tags`), `@Operation`은 `io.swagger.v3.oas.annotations.Operation`.
+- **Swagger UI 접근 규칙**: `SecurityConfig`의 `authorizeHttpRequests`에 `/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**`를 `permitAll()`로 추가해야 함(없으면 401 JSON). `anyRequest()`보다 위에 둘 것. "Try it out"은 인증이 HttpOnly 쿠키라서, 같은 브라우저에서 먼저 구글 로그인해두면 같은 출처라 쿠키가 자동으로 실려서 동작함.
+- **운영 배포 시 Swagger 비활성화**: `application-prod.yaml`에 `springdoc.api-docs.enabled=false` + `springdoc.swagger-ui.enabled=false` **둘 다**(swagger-ui만 끄면 `/v3/api-docs` JSON이 노출됨). 운영 서버에 `SPRING_PROFILES_ACTIVE=prod` 환경변수 설정(환경변수가 `application.yaml`의 `active: local`보다 우선). 비활성화되면 `permitAll` 규칙이 남아도 핸들러가 없어 404. 운영에선 `application-local.yaml`이 없으므로 DB/OAuth/JWT 비밀값은 환경변수로 따로 주입해야 함.
+- **🔴 페이징 응답 형식이 API 명세서와 달랐던 문제**: 컨트롤러가 `Page<T>`를 그대로 반환해서 Spring 내부 구현(`PageImpl`)이 JSON으로 나감 → 현재 페이지가 명세의 `page`가 아니라 `number`로 나오고, `first/last/empty/numberOfElements/sort/pageable`이 같이 내려감(서버 로그에 `Serializing PageImpl instances as-is is not supported` 경고, Spring도 이 형태의 안정성을 보장 안 함). springdoc 스펙을 열어보고서야 발견했는데, 그 전에 응답을 눈으로 보고도 명세서와 대조하지 않고 넘어갔었음 — **새 API를 만들면 응답 JSON을 명세서 예시와 직접 대조하는 습관 필요.**
+  - **해결**: `PageResponse<T>`(`content, page, size, totalElements, totalPages`) record + `from(Page<T>)` 정적 팩토리. 서비스는 `Page`를 그대로 반환하고 **컨트롤러에서 변환**(수정 범위를 컨트롤러로 한정). `Page.getNumber()` → `page`로 매핑.
+  - 대안이었던 `@EnableSpringDataWebSupport(pageSerializationMode = VIA_DTO)`는 공식 지원 형식이지만 `page`가 `{size, number, totalElements, totalPages}`로 **중첩**되어 명세서의 평평한 형식과 달라서 채택 안 함.
+- **`Pageable` 파라미터에는 `@ParameterObject`(`org.springdoc.core.annotations.ParameterObject`)**: 없으면 springdoc이 `pageable`이라는 필수 객체 파라미터 하나로 문서화해서, 스펙 기반 TS 타입이 `?pageable=...`을 보내는 것처럼 생성됨. 실제 API 동작은 원래 `page/size/sort`로 정상이고 **문서에만** 영향. 붙이면 `page`, `size`, `sort` 선택 파라미터 3개로 펼쳐짐.
+- **springdoc 스펙의 알려진 한계 (TS 타입 생성 시 다룰 것)**: ① 응답 DTO(`ProductResponse` 등)는 `@NotNull` 같은 게 없어 `required` 목록이 비어서 전부 optional로 잡힘 → `openapi-typescript --properties-required-by-default`로 일괄 required 처리하되, 실제로 null일 수 있는 필드(`description`, `unitPrice`, `reversalOfId`, `canceledBy`, `canceledAt`, `consumeType` 등)는 타입에서 `| null`로 보정 필요. 백엔드에서 풀려면 non-null 필드마다 `@Schema(requiredMode = REQUIRED)`를 붙여야 해서 비용이 큼. ② `ResponseEntity`의 상태 코드는 springdoc이 몰라서 POST(201)/DELETE(204)도 스펙엔 200으로만 나옴 → 필요하면 `@Operation(responses = @ApiResponse(responseCode = "201"))`로 문서화. ③ 에러 응답(400/409 등)은 미문서화인데 공통 포맷(`ErrorResponse`) 하나라 프론트에서 타입 하나로 처리 가능.
 
 ---
 
@@ -136,10 +146,11 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/auth-me-logout` 브랜치(`inventory-backend` 레포) 기능/테스트 전부 완료, **PR만 남음**. 다음 세션 목표:
+`feature/page-response` 브랜치(`inventory-backend` 레포) 구현/스펙 확인 완료, **PR만 남음**. 다음 세션 목표:
 
-1. `feature/auth-me-logout` PR 생성 → 셀프 리뷰 → `dev` merge
-2. 작업순서 문서 6단계 — **Next.js 프론트엔드** 착수 (레포구성_브랜치전략 문서 기준 `inventory-frontend` 별도 레포, `feature/frontend-minimal` 브랜치부터)
+1. `feature/page-response` PR 생성 → 셀프 리뷰 → `dev` merge. (**이 PR은 응답 JSON 형식을 바꿈**: `number` → `page`, 불필요 필드 제거. 프론트엔드가 이 응답을 쓰는 코드가 있다면 같이 확인할 것)
+2. 프론트엔드: `/v3/api-docs`로 TS 타입 자동 생성(`openapi-typescript`, 위 "알려진 한계" 참고) — 별도 레포 `inventory-frontend`에서 진행
+   - (원래 계획) 작업순서 문서 6단계 — **Next.js 프론트엔드** (레포구성_브랜치전략 문서 기준 `feature/frontend-minimal` 브랜치부터)
    - 프론트엔드에서 백엔드 API 호출 시 `fetch(..., { credentials: 'include' })` 잊지 말 것 — 안 넣으면 쿠키가 안 실려서 인증 실패
    - 로그인 버튼 → `http://localhost:8080/oauth2/authorization/google`로 이동시키면 됨 (전체 페이지 이동, `fetch` 아님)
    - 로그인 성공 후 `localhost:3000`으로 리다이렉트 → 프론트는 `GET /api/auth/me`(쿠키 자동 전송)로 로그인 여부/role 확인 → ADMIN 전용 UI 분기에 사용
