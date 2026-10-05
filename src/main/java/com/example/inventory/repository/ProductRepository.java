@@ -17,6 +17,6 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     
     boolean existsByCategoryId(Long categoryId);    //카테고리 존재 여부 확인
 
+    boolean existsBySku(String sku);    //상품 고유번호 존재 여부 확인
     
-
 }

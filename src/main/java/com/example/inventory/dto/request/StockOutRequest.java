@@ -10,6 +10,7 @@ package com.example.inventory.dto.request;
 import java.math.BigDecimal;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Digits;
 
 public record StockOutRequest(
     @NotNull(message = "상품 ID는 필수 입력 항목입니다.")
@@ -19,6 +20,7 @@ public record StockOutRequest(
     Integer quantity,
 
     @Positive(message = "가격은 양수여야 합니다.")
+    @Digits(integer = 10, fraction = 2, message = "가격은 정수 10자리, 소수 2자리까지 입력할 수 있습니다.")
     BigDecimal unitPrice,
     String reason
 ) {
