@@ -90,8 +90,8 @@ public class ProductService {
     //상품 생성
     @Transactional
     public ProductResponse create(ProductCreateRequest request){
-        //말단 카테고리 검증
-        categoryService.validateLeaf(request.categoryId());
+        //카테고리 유효성 검증
+        categoryService.validateExists(request.categoryId());
 
         Product product = new Product(request.name(), request.sku(), request.categoryId(), request.unit(), request.sellingPrice(), request.minStockLevel());
         return ProductResponse.from(productRepository.save(product));
@@ -103,8 +103,8 @@ public class ProductService {
         Product product = productRepository.findByIdForUpdate(id)
             .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + id));
 
-        //말단 카테고리 검증
-        categoryService.validateLeaf(request.categoryId());
+        //카테고리 유효성 검증
+        categoryService.validateExists(request.categoryId());
 
         product.update(request.name(), request.sellingPrice(), request.minStockLevel(), request.categoryId());
         return ProductResponse.from(product);

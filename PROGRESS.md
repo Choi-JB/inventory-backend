@@ -96,6 +96,12 @@ main - dev - feature/*
 - **`Specification.where(null)`이 이 프로젝트의 Spring Data JPA 버전에서 예전과 다르게 동작함**: 컴파일 시 `where()`가 오버로드 모호성 에러를 내고(캐스팅으로 해결), 런타임엔 아무 필터 조건도 안 붙었을 때 `Specification.where(null)`이 실제로 `null`을 반환해서 `IllegalArgumentException: Specification must not be null` 발생. **`(root, query, cb) -> cb.conjunction()`(항상 참인 조건)로 시작하는 방식으로 우회** — 버전 의존적인 동작이라 이 방식이 더 안전함. Spring Data JPA 버전이 이례적으로 최신이라(Spring Boot 4.x) 공식 문서/예제와 동작이 다를 수 있다는 점 계속 염두에 둘 것.
 - **Product 생성 시 `costPrice`/`currentStock`은 요청으로 안 받고 생성자 내부에서 하드코딩(`BigDecimal.ZERO`, `0`)으로 초기화.** Category/User 때처럼 Entity에 직접 생성자 만드는 패턴 유지. `update()` 메서드는 API 명세서상 수정 가능한 4개 필드(`name`, `sellingPrice`, `minStockLevel`, `categoryId`)만 받고 `sku`/`unit`/`costPrice`/`currentStock`은 파라미터로도 안 받음(애초에 불가능하게 설계).
 - **말단 카테고리 검증(`CategoryService.validateLeaf`)은 생성 시점뿐 아니라 수정(`categoryId` 변경) 시점에도 적용.** API 명세서엔 생성 시점만 명시돼 있었지만, "상품은 말단 카테고리에만 등록"이라는 불변조건은 항상 유지돼야 한다고 판단해서 update()에도 추가함 (명세서에 없는 빈틈을 자체 판단으로 메운 사례).
+  - **→ 2026-10-05 말단 전용 규칙 자체를 제거.** 프론트 카테고리 화면 작업 중 두 가지를 발견:
+    1. 빈틈: `CategoryService.create()`가 부모 존재 여부만 확인해서, 상품이 있는 말단 아래에 하위를 추가하면 그 상품들이 말단이 아닌 카테고리에 남음 (불변조건이 카테고리 쪽에서 우회됨)
+    2. 빈틈을 막으면(409 거절) 반대로 너무 경직됨 — 상품이 있는 카테고리를 하위로 나누려면 상품을 임시 카테고리로 옮겼다가 되돌려야 함
+  - 대안 비교: ① 409 거절(경직) ② 첫 하위 추가 시 기존 상품을 새 하위로 자동 이동 ③ 규칙 제거 → **③ 채택**. 상위 카테고리 조회 시 하위 상품까지 `IN`으로 포함하는 재귀 조회(`getDescendantCategoryIds`)가 이미 있어 조회 기능 손실이 없고, 이 프로젝트 규모에선 "분류가 흐트러질 수 있다"는 단점보다 단순함·유연함이 더 크다고 판단.
+  - 변경: `validateLeaf()`에서 "하위 카테고리 존재 시 400" 부분만 제거하고, **카테고리 존재 확인(없으면 404)은 남김** — 이 메서드가 존재 확인까지 겸하고 있어서 통째로 지우면 없는 `categoryId`가 FK 위반(DB 에러 → 500)으로 새어 나감. 역할이 바뀌므로 메서드 이름도 존재 확인에 맞게 변경. 카테고리 **삭제** 규칙(하위 또는 소속 상품 있으면 409)은 유지. 관련 문서(API 명세서 3·4·6장, 프론트엔드설계서 6.5) 갱신 완료.
+  - 교훈: 불변조건을 하나 추가하면 그 조건을 깨뜨릴 수 있는 **다른 경로**(여기선 카테고리 생성)까지 같이 막아야 하고, 막았을 때 운영이 가능한지도 같이 따져봐야 함.
 - **검색 결과 0건은 404가 아니라 200 + `content: []`가 정답.** 에러 상황이 아니라 정상적인 "결과 없음" 상태.
 - **`lowStockOnly` 필터 테스트 시 주의**: 입고(IN) API가 아직 없어서(다음 브랜치) 모든 상품의 `currentStock`이 항상 0. `minStockLevel >= 0`인 모든 상품이 논리적으로 "재고부족" 조건(`currentStock <= minStockLevel`)을 만족하므로, 지금 단계에선 `lowStockOnly=true`가 사실상 전체 조회와 똑같이 보일 수 있음 — 버그 아님, 재고 입고 기능 생긴 뒤에 의미 있는 테스트 가능.
 - **삭제 충돌은 항상 `DeleteConflictException`(409), 검증 실패는 `ValidationException`(400)** — 한 번 헷갈려서 삭제 충돌에 `ValidationException`을 썼다가 고친 적 있음. "이미 존재하는 데이터 때문에 삭제 불가" = 409, "요청 자체의 값이 비즈니스 규칙에 안 맞음" = 400으로 구분 기준 명확히 할 것.
