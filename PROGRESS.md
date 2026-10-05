@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-10-02 (springdoc 도입, 페이징 응답 형식 수정 포함)
+**최종 갱신**: 2026-10-05 (말단 카테고리 규칙 제거, 입력 검증 보강 포함)
 
 ---
 
@@ -72,9 +72,12 @@ main - dev - feature/*
 9. `feature/auth-me-logout` (PR #7) — 프론트엔드 선작업 2차. `AuthController`(`GET /api/auth/me`, `POST /api/auth/logout`) 신설, 인증 안 된 API 요청에 401 JSON 응답(커스텀 `AuthenticationEntryPoint`), **세션 기반 인증 정보 자동 복원 차단**(`RequestAttributeSecurityContextRepository`, 아래 3번 참고).
 10. `feature/springdoc` (PR #8) — springdoc 3.x(Swagger UI, `/v3/api-docs`) 도입, 컨트롤러 4개에 `@Tag`/`@Operation` 추가, prod 프로필에서 문서 비활성화(`application-prod.yaml`).
 
-**진행 중**: `feature/page-response` — 스펙 확인 중 발견한 페이징 응답 형식 불일치 수정. `PageResponse<T>` 도입(명세서 1장 형식), 페이징 엔드포인트 3곳이 이를 반환, `Pageable`에 `@ParameterObject` 추가. 구현 완료, 스펙(`/v3/api-docs`) 확인 완료, PR만 남음.
+11. `feature/page-response` (PR #9) — 스펙 확인 중 발견한 페이징 응답 형식 불일치 수정. `PageResponse<T>` 도입(명세서 1장 형식), 페이징 엔드포인트 3곳이 이를 반환, `Pageable`에 `@ParameterObject` 추가.
+12. `feature/remove-leaf-rule` (PR #10) — "상품은 말단 카테고리에만 등록" 규칙 제거. `validateLeaf()` → `validateExists()`(존재 확인 404만 유지). 결정 배경은 아래 3번 참고.
 
-**다음**: PR merge 후 → 작업순서 문서 6단계(Next.js 프론트엔드) 계속 진행. 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
+**진행 중**: `feature/input-validation` — 입력값이 DB 제약을 넘거나 중복일 때 500이 나던 문제를 4xx로 처리. `@Size`(카테고리/상품 name, sku), `@Digits`(금액), SKU 중복 409, 범용 `ConflictException` 추가. 구현·테스트 완료, PR만 남음.
+
+**다음**: PR merge 후 → 프론트엔드 쪽에서 말단 규칙 관련 UI 정리(`leafOnly`, 안내 문구)와 타입 재생성. 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
 
 ---
 
@@ -137,6 +140,12 @@ main - dev - feature/*
 - **🔴 페이징 응답 형식이 API 명세서와 달랐던 문제**: 컨트롤러가 `Page<T>`를 그대로 반환해서 Spring 내부 구현(`PageImpl`)이 JSON으로 나감 → 현재 페이지가 명세의 `page`가 아니라 `number`로 나오고, `first/last/empty/numberOfElements/sort/pageable`이 같이 내려감(서버 로그에 `Serializing PageImpl instances as-is is not supported` 경고, Spring도 이 형태의 안정성을 보장 안 함). springdoc 스펙을 열어보고서야 발견했는데, 그 전에 응답을 눈으로 보고도 명세서와 대조하지 않고 넘어갔었음 — **새 API를 만들면 응답 JSON을 명세서 예시와 직접 대조하는 습관 필요.**
   - **해결**: `PageResponse<T>`(`content, page, size, totalElements, totalPages`) record + `from(Page<T>)` 정적 팩토리. 서비스는 `Page`를 그대로 반환하고 **컨트롤러에서 변환**(수정 범위를 컨트롤러로 한정). `Page.getNumber()` → `page`로 매핑.
   - 대안이었던 `@EnableSpringDataWebSupport(pageSerializationMode = VIA_DTO)`는 공식 지원 형식이지만 `page`가 `{size, number, totalElements, totalPages}`로 **중첩**되어 명세서의 평평한 형식과 달라서 채택 안 함.
+- **🔴 DB 제약을 넘는 입력이 전부 500으로 나가던 문제 → 요청 단계에서 4xx로 차단.** DB 제약 위반은 `DataIntegrityViolationException`으로 올라와 `GlobalExceptionHandler`의 catch-all(`Exception.class`)에서 500이 됨. 사용자 입력 실수인데 서버 장애처럼 보이고 프론트가 원인을 알 수 없음. 프론트에서 카테고리 이름 101자를 보내다 발견했고, 점검해보니 요청 DTO 전체에 길이 검증이 하나도 없었음.
+  - **방침: DB 컬럼 제약(길이·정밀도·UNIQUE)에 걸릴 수 있는 입력은 요청 DTO나 서비스에서 먼저 막는다.** 새 DTO/필드를 만들 때 DB 설계서의 컬럼 타입을 같이 확인할 것.
+  - 길이: `@Size` — 카테고리 `name` 100, 상품 `name` 200, `sku` 50. `description`/`reason`은 `TEXT`라 제한 없음.
+  - 금액: `@Digits(integer = 10, fraction = 2)` — `NUMERIC(12,2)` 기준. 상품 `sellingPrice`, 입고/출고 `unitPrice`. `message`를 반드시 한글로 지정할 것 — 안 쓰면 영문 기본 문구가 `GlobalExceptionHandler`를 통해 응답에 그대로 나감. 소수 셋째 자리 이상은 이전엔 DB가 조용히 반올림했으나 이제 400.
+  - SKU 중복: `ProductRepository.existsBySku` + `ProductService.create()`에서 저장 전 확인 → 409. **한계**: 확인~저장 사이 동시 등록은 DB 유니크 제약에 걸려 여전히 500. 필요해지면 `DataIntegrityViolationException` 핸들러(409)를 안전망으로 추가.
+- **`ConflictException`(409, 코드 `CONFLICT`) 사용 기준**: "요청 형식은 유효하나 현재 데이터와 충돌"할 때 범용으로 사용 (SKU 중복 등). API 명세서의 400/409 구분(400=요청 자체가 잘못, 409=상태 충돌)을 따름. `ValidationException`(400)은 값 자체가 규칙에 안 맞을 때, `DeleteConflictException`은 삭제 조건 충돌 전용(코드가 `DELETE_CONFLICT`라 다른 상황에 쓰면 의미가 틀림).
 - **`Pageable` 파라미터에는 `@ParameterObject`(`org.springdoc.core.annotations.ParameterObject`)**: 없으면 springdoc이 `pageable`이라는 필수 객체 파라미터 하나로 문서화해서, 스펙 기반 TS 타입이 `?pageable=...`을 보내는 것처럼 생성됨. 실제 API 동작은 원래 `page/size/sort`로 정상이고 **문서에만** 영향. 붙이면 `page`, `size`, `sort` 선택 파라미터 3개로 펼쳐짐.
 - **springdoc 스펙의 알려진 한계 (TS 타입 생성 시 다룰 것)**: ① 응답 DTO(`ProductResponse` 등)는 `@NotNull` 같은 게 없어 `required` 목록이 비어서 전부 optional로 잡힘 → `openapi-typescript --properties-required-by-default`로 일괄 required 처리하되, 실제로 null일 수 있는 필드(`description`, `unitPrice`, `reversalOfId`, `canceledBy`, `canceledAt`, `consumeType` 등)는 타입에서 `| null`로 보정 필요. 백엔드에서 풀려면 non-null 필드마다 `@Schema(requiredMode = REQUIRED)`를 붙여야 해서 비용이 큼. ② `ResponseEntity`의 상태 코드는 springdoc이 몰라서 POST(201)/DELETE(204)도 스펙엔 200으로만 나옴 → 필요하면 `@Operation(responses = @ApiResponse(responseCode = "201"))`로 문서화. ③ 에러 응답(400/409 등)은 미문서화인데 공통 포맷(`ErrorResponse`) 하나라 프론트에서 타입 하나로 처리 가능.
 
@@ -152,10 +161,11 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/page-response` 브랜치(`inventory-backend` 레포) 구현/스펙 확인 완료, **PR만 남음**. 다음 세션 목표:
+`feature/input-validation` 브랜치(`inventory-backend` 레포) 구현/테스트 완료, **PR만 남음**. 다음 세션 목표:
 
-1. `feature/page-response` PR 생성 → 셀프 리뷰 → `dev` merge. (**이 PR은 응답 JSON 형식을 바꿈**: `number` → `page`, 불필요 필드 제거. 프론트엔드가 이 응답을 쓰는 코드가 있다면 같이 확인할 것)
-2. 프론트엔드: `/v3/api-docs`로 TS 타입 자동 생성(`openapi-typescript`, 위 "알려진 한계" 참고) — 별도 레포 `inventory-frontend`에서 진행
+1. `feature/input-validation` PR 생성 → 셀프 리뷰 → `dev` merge
+2. 프론트엔드(`inventory-frontend`) 정리 — 말단 규칙 제거(#10)에 맞춰 `categories/page.tsx` 안내 문구, 상품 등록·수정 화면의 `CategoryTreeSelect` `leafOnly` 옵션 제거. 백엔드 `@Operation` 문구가 바뀌었으니 `/v3/api-docs`로 TS 타입 재생성(`types/api.ts`). 페이징 응답이 `page` 형식으로 바뀐 것(#9)을 쓰는 코드도 확인
+   - 타입 생성 시 `openapi-typescript --properties-required-by-default` 및 nullable 필드 보정 (위 "알려진 한계" 참고)
    - (원래 계획) 작업순서 문서 6단계 — **Next.js 프론트엔드** (레포구성_브랜치전략 문서 기준 `feature/frontend-minimal` 브랜치부터)
    - 프론트엔드에서 백엔드 API 호출 시 `fetch(..., { credentials: 'include' })` 잊지 말 것 — 안 넣으면 쿠키가 안 실려서 인증 실패
    - 로그인 버튼 → `http://localhost:8080/oauth2/authorization/google`로 이동시키면 됨 (전체 페이지 이동, `fetch` 아님)

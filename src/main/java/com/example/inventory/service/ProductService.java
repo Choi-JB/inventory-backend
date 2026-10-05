@@ -20,6 +20,7 @@ import com.example.inventory.dto.request.ProductCreateRequest;
 import com.example.inventory.dto.request.ProductUpdateRequest;
 import com.example.inventory.exception.NotFoundException;
 import com.example.inventory.exception.DeleteConflictException;
+import com.example.inventory.exception.ConflictException;
 
 @Service
 public class ProductService {
@@ -92,6 +93,11 @@ public class ProductService {
     public ProductResponse create(ProductCreateRequest request){
         //카테고리 유효성 검증
         categoryService.validateExists(request.categoryId());
+
+        //상품 고유번호 존재 확인
+        if (productRepository.existsBySku(request.sku())) {
+            throw new ConflictException("상품 고유번호가 이미 존재합니다: " + request.sku());
+        }
 
         Product product = new Product(request.name(), request.sku(), request.categoryId(), request.unit(), request.sellingPrice(), request.minStockLevel());
         return ProductResponse.from(productRepository.save(product));
