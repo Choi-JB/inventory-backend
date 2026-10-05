@@ -11,7 +11,6 @@ import com.example.inventory.dto.response.CategoryResponse;
 import com.example.inventory.entity.Category;
 import com.example.inventory.exception.DeleteConflictException;
 import com.example.inventory.exception.NotFoundException;
-import com.example.inventory.exception.ValidationException;
 import com.example.inventory.repository.CategoryRepository;
 import com.example.inventory.repository.ProductRepository;
 import org.springframework.stereotype.Service;
@@ -101,16 +100,11 @@ public class CategoryService {
         categoryRepository.delete(category);
     }
 
-    // 상품 등록 시 categoryId가 말단(하위 카테고리 없음)인지 검증
-    public void validateLeaf(Long categoryId) {
-        // 힌트 1: 카테고리 자체가 존재하는지부터 확인 (없으면 NotFoundException)
-            Category category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new NotFoundException("카테고리를 찾을 수 없습니다: " + categoryId));
-
-        // 힌트 2: categoryRepository.existsByParentId(categoryId)로 하위 존재 여부 확인
-        //         하위가 있으면 → ValidationException("말단 카테고리가 아닙니다" 같은 메시지)
-        if (categoryRepository.existsByParentId(categoryId)) {
-            throw new ValidationException("말단 카테고리가 아닙니다: " + categoryId);
+    // 카테고리 존재 확인
+    public void validateExists(Long categoryId) {
+        // 카테고리 자체가 존재하는지부터 확인 (없으면 NotFoundException)
+        if(!categoryRepository.existsById(categoryId)) {
+            throw new NotFoundException("카테고리를 찾을 수 없습니다: " + categoryId);
         }
     }
 

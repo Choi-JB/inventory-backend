@@ -49,7 +49,7 @@ public class ProductController {
 
     // POST /api/products — ADMIN만, 201 Created
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "상품 등록", description = "ADMIN 전용. 말단 카테고리에만 등록 가능하며, costPrice와 currentStock은 0으로 초기화됩니다(입고로만 증가).")
+    @Operation(summary = "상품 등록", description = "ADMIN 전용. costPrice와 currentStock은 0으로 초기화됩니다(입고로만 증가).")
     @PostMapping
     public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody ProductCreateRequest request) {
         ProductResponse product = productService.create(request);

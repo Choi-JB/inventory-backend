@@ -28,7 +28,7 @@ public class Product {
     @Column(name = "sku", nullable = false, unique = true)
     private String sku;
 
-    // 말단(하위 카테고리 없는) 카테고리만 가능 — CategoryService.validateLeaf()로 검증
+    // 카테고리 ID
     @Column(name = "category_id", nullable = false)
     private Long categoryId;
 
