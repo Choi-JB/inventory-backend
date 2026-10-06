@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-10-07 (거래 응답에 상품명/단위 추가, 손익 응답에 최종 이익 추가 포함)
+**최종 갱신**: 2026-10-07 (거래 응답에 상품명/단위 추가, 손익 응답에 최종 이익 추가, 쿼리 파라미터 타입 오류 400 처리 포함)
 
 ---
 
@@ -78,11 +78,12 @@ main - dev - feature/*
 13. `feature/input-validation` (PR #11) — 입력값이 DB 제약을 넘거나 중복일 때 500이 나던 문제를 4xx로 처리. `@Size`(카테고리/상품 name, sku), `@Digits`(금액), SKU 중복 409, 범용 `ConflictException` 추가.
 14. `feature/adjustment-reason-notblank` (PR #12) — `StockAdjustmentRequest.reason`의 `@NotNull`을 `@NotBlank`로 변경(빈 문자열/공백만 있는 사유 차단, 명세서 "reason 필수"와 일치).
 
-15. `feature/transaction-product-info` (PR #) — 프론트 거래 목록 화면에서 필요해진 `productName`, `productUnit`을 모든 거래 응답(`StockTransactionResponse`)에 추가. `from(StockTransaction, Product)`로 시그니처 변경, `search()`는 상품을 `findAllById`로 한 번에 조회해 N+1 방지.
+15. `feature/transaction-product-info` (PR #13) — 프론트 거래 목록 화면에서 필요해진 `productName`, `productUnit`을 모든 거래 응답(`StockTransactionResponse`)에 추가. `from(StockTransaction, Product)`로 시그니처 변경, `search()`는 상품을 `findAllById`로 한 번에 조회해 N+1 방지.
+16. `feature/profit-loss-net-profit` (PR #14) — 손익 응답에 `netProfit`(= `totalProfit − consumeLoss`)과 상품별 `net`(= `profit − loss`) 추가, `byProduct`를 `net` 내림차순(동률은 `productId` 오름차순)으로 정렬, `getProfitLoss()`의 상품 조회 N+1을 `findAllById`로 수정. 잘못된 쿼리 파라미터 타입(날짜/enum/숫자)이 500으로 나가던 문제를 400으로 처리(`MethodArgumentTypeMismatchException` 핸들러). 결정 배경은 아래 3번 참고.
 
-**진행 중**: `feature/profit-loss-net-profit` — 손익 응답에 `netProfit`(= `totalProfit − consumeLoss`)과 상품별 `net`(= `profit − loss`) 추가, `byProduct`를 `net` 내림차순(동률은 `productId` 오름차순)으로 정렬, `getProfitLoss()`의 상품 조회 N+1을 `findAllById`로 수정. 구현·컴파일 확인 완료, 서버 로그로 쿼리 1회 확인 후 PR 예정.
+**진행 중**: 없음 (백엔드는 프론트엔드 연동 중 발견되는 이슈 대응 위주).
 
-**다음**: PR merge 후 → 프론트엔드 쪽에서 손익 화면(카드 라벨: `totalProfit`=판매 이익, `netProfit`=최종 이익)과 말단 규칙 관련 UI 정리(`leafOnly`, 안내 문구), 타입 재생성(거래 응답/손익 응답에 추가된 필드 반영). 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
+**다음**: 프론트엔드 쪽에서 손익 화면(카드 라벨: `totalProfit`=판매 이익, `netProfit`=최종 이익)과 말단 규칙 관련 UI 정리(`leafOnly`, 안내 문구), 타입 재생성(거래 응답/손익 응답에 추가된 필드 반영). 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
 
 ---
 
@@ -160,6 +161,9 @@ main - dev - feature/*
   - 기존 필드는 그대로 두고 필드만 추가해서 하위 호환 유지. `totalProfit` 라벨은 "판매 이익", `netProfit`은 "최종 이익"으로 프론트에 안내. DTO 주석도 "수익 − 손실"이라는 틀린 설명을 "판매 이익(소비 손실 제외)"으로 정정함.
   - `byProduct`는 `HashSet` 순회라 응답 순서가 매번 달라질 수 있었음 → `.sorted(Comparator.comparing(ByProduct::net).reversed().thenComparing(ByProduct::productId))`로 고정. `.reversed()`를 쓸 때는 람다가 아니라 **메서드 참조로 써야 타입 추론이 됨**. 정렬 기준은 API 명세서 5장에 명시.
   - `getProfitLoss()`도 거래 상품마다 `findById`를 부르던 N+1을 `findAllById` → `Map<Long, Product>`로 수정(위 "거래 응답에 상품명/단위" 항목과 같은 패턴). **고치는 중 `productMap`만 만들어 놓고 `.map` 안에서 `findById`를 그대로 두는 실수**가 있었음 — 쿼리가 오히려 하나 늘어난 채로 N+1이 남으므로, 배치 로딩을 적용한 뒤엔 SQL 로그로 실제 쿼리 수를 확인할 것.
+- **🔴 잘못된 쿼리 파라미터 타입이 500으로 나가던 문제 → `MethodArgumentTypeMismatchException` 전용 핸들러(400 `VALIDATION_ERROR`) 추가.** 손익 API를 `startDate=2026-09-01`(날짜만)로 호출했더니 500. 이 예외는 `type=ABC`(enum), `productId=abc`(숫자)처럼 쿼리 파라미터 변환이 실패할 때 전부 발생하는데 전용 핸들러가 없어 catch-all(500)로 빠지고 있었음 (위 "프레임워크 예외 처리 패턴"을 또 적용한 사례). 메시지는 `e.getPropertyName()`으로 파라미터 이름을 넣음 — Spring 7.0.9에서 `getName()`과 같은 값을 반환함을 직접 확인.
+  - **날짜 파라미터 형식 결정: `yyyy-MM-ddTHH:mm:ss`로 고정 (A안).** 컨트롤러의 `LocalDateTime` 파라미터는 `@DateTimeFormat` 없이도 ISO 날짜시간만 받음. 대안은 B) `@DateTimeFormat(iso = DATE_TIME)` 명시(동작 동일, springdoc에 `date-time`으로 더 분명히 표기) C) 날짜만 허용하고 종료일을 서버가 `23:59:59`로 보정(규칙이 늘어남). 프론트엔드설계서 6.4가 이미 "시작 `00:00:00`, 종료 `23:59:59`로 직접 조립해 전송"으로 정해 둬서 서버가 날짜만 받아줄 필요가 적다고 보고 A 채택. API 명세서 5장에 형식 명시, 1장 400 설명에 "타입/형식 오류" 추가.
+  - 수동 테스트 시 날짜는 `startDate=2026-09-01T00:00:00&endDate=2026-09-30T23:59:59`처럼 시각까지 넣을 것. 로그인 안 된 상태에서는 400이 아니라 401이 나오는 게 정상.
 - **`Pageable` 파라미터에는 `@ParameterObject`(`org.springdoc.core.annotations.ParameterObject`)**: 없으면 springdoc이 `pageable`이라는 필수 객체 파라미터 하나로 문서화해서, 스펙 기반 TS 타입이 `?pageable=...`을 보내는 것처럼 생성됨. 실제 API 동작은 원래 `page/size/sort`로 정상이고 **문서에만** 영향. 붙이면 `page`, `size`, `sort` 선택 파라미터 3개로 펼쳐짐.
 - **springdoc 스펙의 알려진 한계 (TS 타입 생성 시 다룰 것)**: ① 응답 DTO(`ProductResponse` 등)는 `@NotNull` 같은 게 없어 `required` 목록이 비어서 전부 optional로 잡힘 → `openapi-typescript --properties-required-by-default`로 일괄 required 처리하되, 실제로 null일 수 있는 필드(`description`, `unitPrice`, `reversalOfId`, `canceledBy`, `canceledAt`, `consumeType` 등)는 타입에서 `| null`로 보정 필요. 백엔드에서 풀려면 non-null 필드마다 `@Schema(requiredMode = REQUIRED)`를 붙여야 해서 비용이 큼. ② `ResponseEntity`의 상태 코드는 springdoc이 몰라서 POST(201)/DELETE(204)도 스펙엔 200으로만 나옴 → 필요하면 `@Operation(responses = @ApiResponse(responseCode = "201"))`로 문서화. ③ 에러 응답(400/409 등)은 미문서화인데 공통 포맷(`ErrorResponse`) 하나라 프론트에서 타입 하나로 처리 가능.
 
@@ -175,9 +179,9 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/profit-loss-net-profit` 브랜치(`inventory-backend` 레포) 구현 완료, **로그 확인 + PR만 남음**. 다음 세션 목표:
+백엔드(`inventory-backend`)는 `feature/profit-loss-net-profit`(#14)까지 `dev`에 merge 완료. 다음 세션 목표:
 
-1. `feature/profit-loss-net-profit` — `bootRun` 후 `GET /api/stock/profit-loss`를 상품 2개 이상 걸리는 기간으로 호출해 `select ... from products where id in (...)`가 1번만 나가는지, `byProduct`가 `net` 내림차순인지, `netProfit = totalProfit − consumeLoss`인지 확인 → PR → `dev` merge
+1. 프론트엔드(`inventory-frontend`) 손익 화면 — 카드 라벨을 `totalProfit`="판매 이익", `netProfit`="최종 이익"으로 표시, `byProduct`는 서버가 `net` 내림차순으로 내려주므로 그대로 사용. 날짜 파라미터는 `yyyy-MM-ddTHH:mm:ss`로 전송(설계서 6.4). TS 타입은 손익/거래 응답에 추가된 필드(`netProfit`, `net`, `productName`, `productUnit`) 반영해서 재생성
 2. 프론트엔드(`inventory-frontend`) 정리 — 말단 규칙 제거(#10)에 맞춰 `categories/page.tsx` 안내 문구, 상품 등록·수정 화면의 `CategoryTreeSelect` `leafOnly` 옵션 제거. 백엔드 `@Operation` 문구가 바뀌었으니 `/v3/api-docs`로 TS 타입 재생성(`types/api.ts`). 페이징 응답이 `page` 형식으로 바뀐 것(#9)을 쓰는 코드도 확인
    - 타입 생성 시 `openapi-typescript --properties-required-by-default` 및 nullable 필드 보정 (위 "알려진 한계" 참고)
    - (원래 계획) 작업순서 문서 6단계 — **Next.js 프론트엔드** (레포구성_브랜치전략 문서 기준 `feature/frontend-minimal` 브랜치부터)
