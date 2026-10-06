@@ -103,14 +103,32 @@ public class StockTransactionService {
         }
 
         Page<StockTransaction> stockTransactions = stockTransactionRepository.findAll(spec, pageable);
-        return stockTransactions.map(StockTransactionResponse::from);
+        
+        // 1단계: 이 페이지의 거래들에서 productId만 모으기 (중복 제거)
+        Set<Long> productIds = stockTransactions.getContent().stream()
+                                .map(st -> st.getProductId())
+                                .collect(Collectors.toSet());
+
+        // 2단계: 그 id들의 상품을 쿼리 한 번으로 가져오기
+        // "productId를 모아 상품을 한 번에 조회 (N+1 방지)"
+        // 3단계: id로 바로 찾을 수 있게 Map으로 바꾸기
+        Map<Long, Product> productMap = productRepository.findAllById(productIds).stream()
+                                        .collect(Collectors.toMap(
+                                            Product::getId,     // 키: 상품의 id
+                                            product -> product  // 값: 상품 자체
+                                        ));
+
+        // 4단계: 각 거래마다 Map에서 자기 상품을 꺼내 from(거래, 상품)에 넘기기
+        return stockTransactions.map(tx -> StockTransactionResponse.from(tx, productMap.get(tx.getProductId())));
     }
 
     // 거래내역 조회 (내역 id로 조회)
     public StockTransactionResponse searchById(Long id) {
         StockTransaction stockTransaction = stockTransactionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("거래내역을 찾을 수 없습니다: " + id));
-        return StockTransactionResponse.from(stockTransaction);
+        Product product = productRepository.findById(stockTransaction.getProductId())
+                .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + stockTransaction.getProductId()));
+        return StockTransactionResponse.from(stockTransaction, product);
     }
 
     
@@ -130,7 +148,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 입고 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction);
+        return StockTransactionResponse.from(stockTransaction, product);
     }
 
     // 재고 출고
@@ -154,7 +172,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 출고 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction);
+        return StockTransactionResponse.from(stockTransaction, product);
 
     }
 
@@ -174,7 +192,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 소비 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction);
+        return StockTransactionResponse.from(stockTransaction, product);
     }
 
     // 재고 조정
@@ -196,7 +214,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 조정 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction);
+        return StockTransactionResponse.from(stockTransaction, product);
     }
 
     /**
@@ -255,7 +273,7 @@ public class StockTransactionService {
         stockTransaction.cancel(userId);
         stockTransactionRepository.save(stockTransaction);
 
-        return StockTransactionResponse.from(reversalStockTransaction);
+        return StockTransactionResponse.from(reversalStockTransaction, product);
     }
 
     // 수익/손실 조회
