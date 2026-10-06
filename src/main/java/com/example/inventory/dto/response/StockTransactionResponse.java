@@ -6,6 +6,8 @@ import com.example.inventory.enums.TransactionStatus;
 import com.example.inventory.entity.StockTransaction;
 import java.time.LocalDateTime;
 import com.example.inventory.enums.ConsumeType;
+import com.example.inventory.enums.Unit;
+import com.example.inventory.entity.Product;
 
 public record StockTransactionResponse(
     Long id,
@@ -21,10 +23,11 @@ public record StockTransactionResponse(
     Long canceledBy,
     LocalDateTime canceledAt,
     LocalDateTime createdAt,
-    ConsumeType consumeType
-    
+    ConsumeType consumeType,
+    String productName,
+    Unit productUnit
 ) {
-    public static StockTransactionResponse from(StockTransaction stockTransaction) {
+    public static StockTransactionResponse from(StockTransaction stockTransaction, Product product) {
         return new StockTransactionResponse(
             stockTransaction.getId(),
             stockTransaction.getProductId(),
@@ -39,7 +42,9 @@ public record StockTransactionResponse(
             stockTransaction.getCanceledBy(),
             stockTransaction.getCanceledAt(),
             stockTransaction.getCreatedAt(),
-            stockTransaction.getConsumeType()
+            stockTransaction.getConsumeType(),
+            product.getName(),
+            product.getUnit()
         );
     }
 }

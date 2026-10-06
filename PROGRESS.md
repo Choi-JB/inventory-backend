@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-10-05 (말단 카테고리 규칙 제거, 입력 검증 보강 포함)
+**최종 갱신**: 2026-10-06 (입력 검증 보강, 거래 응답에 상품명/단위 추가 포함)
 
 ---
 
@@ -75,9 +75,12 @@ main - dev - feature/*
 11. `feature/page-response` (PR #9) — 스펙 확인 중 발견한 페이징 응답 형식 불일치 수정. `PageResponse<T>` 도입(명세서 1장 형식), 페이징 엔드포인트 3곳이 이를 반환, `Pageable`에 `@ParameterObject` 추가.
 12. `feature/remove-leaf-rule` (PR #10) — "상품은 말단 카테고리에만 등록" 규칙 제거. `validateLeaf()` → `validateExists()`(존재 확인 404만 유지). 결정 배경은 아래 3번 참고.
 
-**진행 중**: `feature/input-validation` — 입력값이 DB 제약을 넘거나 중복일 때 500이 나던 문제를 4xx로 처리. `@Size`(카테고리/상품 name, sku), `@Digits`(금액), SKU 중복 409, 범용 `ConflictException` 추가. 구현·테스트 완료, PR만 남음.
+13. `feature/input-validation` (PR #11) — 입력값이 DB 제약을 넘거나 중복일 때 500이 나던 문제를 4xx로 처리. `@Size`(카테고리/상품 name, sku), `@Digits`(금액), SKU 중복 409, 범용 `ConflictException` 추가.
+14. `feature/adjustment-reason-notblank` (PR #12) — `StockAdjustmentRequest.reason`의 `@NotNull`을 `@NotBlank`로 변경(빈 문자열/공백만 있는 사유 차단, 명세서 "reason 필수"와 일치).
 
-**다음**: PR merge 후 → 프론트엔드 쪽에서 말단 규칙 관련 UI 정리(`leafOnly`, 안내 문구)와 타입 재생성. 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
+**진행 중**: `feature/transaction-product-info` — 프론트 거래 목록 화면에서 필요해진 `productName`, `productUnit`을 모든 거래 응답(`StockTransactionResponse`)에 추가. `from(StockTransaction, Product)`로 시그니처 변경, `search()`는 상품을 `findAllById`로 한 번에 조회해 N+1 방지. 구현 완료, 서버 로그로 쿼리 1회 확인 후 PR 예정.
+
+**다음**: PR merge 후 → 프론트엔드 쪽에서 말단 규칙 관련 UI 정리(`leafOnly`, 안내 문구)와 타입 재생성(거래 응답에 추가된 필드 반영). 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
 
 ---
 
@@ -146,6 +149,10 @@ main - dev - feature/*
   - 금액: `@Digits(integer = 10, fraction = 2)` — `NUMERIC(12,2)` 기준. 상품 `sellingPrice`, 입고/출고 `unitPrice`. `message`를 반드시 한글로 지정할 것 — 안 쓰면 영문 기본 문구가 `GlobalExceptionHandler`를 통해 응답에 그대로 나감. 소수 셋째 자리 이상은 이전엔 DB가 조용히 반올림했으나 이제 400.
   - SKU 중복: `ProductRepository.existsBySku` + `ProductService.create()`에서 저장 전 확인 → 409. **한계**: 확인~저장 사이 동시 등록은 DB 유니크 제약에 걸려 여전히 500. 필요해지면 `DataIntegrityViolationException` 핸들러(409)를 안전망으로 추가.
 - **`ConflictException`(409, 코드 `CONFLICT`) 사용 기준**: "요청 형식은 유효하나 현재 데이터와 충돌"할 때 범용으로 사용 (SKU 중복 등). API 명세서의 400/409 구분(400=요청 자체가 잘못, 409=상태 충돌)을 따름. `ValidationException`(400)은 값 자체가 규칙에 안 맞을 때, `DeleteConflictException`은 삭제 조건 충돌 전용(코드가 `DELETE_CONFLICT`라 다른 상황에 쓰면 의미가 틀림).
+- **거래 응답에 상품명/단위 포함 (`productName`, `productUnit`) — 프론트가 목록 행마다 상품 조회 API를 또 부르는 구조를 피하려고 백엔드 응답에 합침.** `StockTransaction`은 `productId`(순수 FK)만 갖고 있어서 응답 DTO 변환 시 `Product`가 필요해짐 → `StockTransactionResponse.from(StockTransaction, Product)`로 변경.
+  - **`search()`의 N+1 방지**: 거래 N건마다 `productRepository.findById`를 부르면 쿼리가 N+1번 나감. 페이지의 `productId`를 `Set`으로 모아 `findAllById(ids)` 한 번(`WHERE id IN (...)`)으로 조회 → `Map<Long, Product>`로 만들어 변환 시 `productMap.get(tx.getProductId())`로 꺼냄. 쿼리는 페이지 조회 + 상품 조회 + count로 고정.
+  - **정확한 표현**: N+1은 "다른 테이블의 연관 데이터를 건건이 조회"할 때 생기는 일반적인 문제이고, 순수 FK 매핑이 원인이 아님(`@ManyToOne(LAZY)`여도 똑같이 생김). 순수 FK에서는 fetch join을 쓸 수 없어서 **해결책이 수동 배치 로딩(`findAllById` → `Map`)으로 달라질 뿐**.
+  - 단건 조회(`searchById`)와 입고/출고/소비/조정/롤백은 이미 락을 잡아 가져온 `product`를 그대로 넘기므로 추가 쿼리 없음(`searchById`만 `findById` 1회 추가). 응답 DTO 필드가 늘었으니 API 명세서 5장 예시와 프론트 TS 타입도 같이 갱신.
 - **`Pageable` 파라미터에는 `@ParameterObject`(`org.springdoc.core.annotations.ParameterObject`)**: 없으면 springdoc이 `pageable`이라는 필수 객체 파라미터 하나로 문서화해서, 스펙 기반 TS 타입이 `?pageable=...`을 보내는 것처럼 생성됨. 실제 API 동작은 원래 `page/size/sort`로 정상이고 **문서에만** 영향. 붙이면 `page`, `size`, `sort` 선택 파라미터 3개로 펼쳐짐.
 - **springdoc 스펙의 알려진 한계 (TS 타입 생성 시 다룰 것)**: ① 응답 DTO(`ProductResponse` 등)는 `@NotNull` 같은 게 없어 `required` 목록이 비어서 전부 optional로 잡힘 → `openapi-typescript --properties-required-by-default`로 일괄 required 처리하되, 실제로 null일 수 있는 필드(`description`, `unitPrice`, `reversalOfId`, `canceledBy`, `canceledAt`, `consumeType` 등)는 타입에서 `| null`로 보정 필요. 백엔드에서 풀려면 non-null 필드마다 `@Schema(requiredMode = REQUIRED)`를 붙여야 해서 비용이 큼. ② `ResponseEntity`의 상태 코드는 springdoc이 몰라서 POST(201)/DELETE(204)도 스펙엔 200으로만 나옴 → 필요하면 `@Operation(responses = @ApiResponse(responseCode = "201"))`로 문서화. ③ 에러 응답(400/409 등)은 미문서화인데 공통 포맷(`ErrorResponse`) 하나라 프론트에서 타입 하나로 처리 가능.
 
@@ -161,9 +168,9 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-`feature/input-validation` 브랜치(`inventory-backend` 레포) 구현/테스트 완료, **PR만 남음**. 다음 세션 목표:
+`feature/transaction-product-info` 브랜치(`inventory-backend` 레포) 구현 완료, **로그 확인 + PR만 남음**. 다음 세션 목표:
 
-1. `feature/input-validation` PR 생성 → 셀프 리뷰 → `dev` merge
+1. `feature/transaction-product-info` — `search()`의 남은 힌트 주석 정리, `bootRun` 후 거래 목록 호출 시 `select ... from products where id in (...)`가 1번만 나가는지 확인 → PR → `dev` merge
 2. 프론트엔드(`inventory-frontend`) 정리 — 말단 규칙 제거(#10)에 맞춰 `categories/page.tsx` 안내 문구, 상품 등록·수정 화면의 `CategoryTreeSelect` `leafOnly` 옵션 제거. 백엔드 `@Operation` 문구가 바뀌었으니 `/v3/api-docs`로 TS 타입 재생성(`types/api.ts`). 페이징 응답이 `page` 형식으로 바뀐 것(#9)을 쓰는 코드도 확인
    - 타입 생성 시 `openapi-typescript --properties-required-by-default` 및 nullable 필드 보정 (위 "알려진 한계" 참고)
    - (원래 계획) 작업순서 문서 6단계 — **Next.js 프론트엔드** (레포구성_브랜치전략 문서 기준 `feature/frontend-minimal` 브랜치부터)
