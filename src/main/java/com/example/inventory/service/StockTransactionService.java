@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.stream.Collectors;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Comparator;
 
 @Service
 public class StockTransactionService {
@@ -302,6 +303,8 @@ public class StockTransactionService {
                 .map(stockTransaction -> stockTransaction.getCostPriceSnapshot().multiply(new BigDecimal(stockTransaction.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        //최종 이익
+        BigDecimal netProfit = totalProfit.subtract(consumeLoss);
 
         //제품별 수익 계산
         Map<Long, BigDecimal> profitByProduct = outTransactions.stream()
@@ -325,19 +328,33 @@ public class StockTransactionService {
         Set<Long> productIds = new HashSet<>();
         productIds.addAll(profitByProduct.keySet());
         productIds.addAll(lossByProduct.keySet());
+        
+        Map<Long, Product> productMap = productRepository.findAllById(productIds).stream()
+                                            .collect(Collectors.toMap(
+                                                Product::getId, 
+                                                product -> product
+                                            ));
+
 
         //제품별 수익/손실 계산 (상품 조회 후 수익/손실 계산)
         List<ProfitLossResponse.ByProduct> byProduct = productIds.stream()
         .map(id -> {
-            Product product = productRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + id));
+            Product product = productMap.get(id);
+            if(product == null){
+                throw new NotFoundException("상품을 찾을 수 없습니다: " + id);
+            }
             BigDecimal profit = profitByProduct.getOrDefault(id, BigDecimal.ZERO);
             BigDecimal loss = lossByProduct.getOrDefault(id, BigDecimal.ZERO);
-            return new ProfitLossResponse.ByProduct(id, product.getName(), profit, loss);
+            BigDecimal net = profit.subtract(loss);
+            return new ProfitLossResponse.ByProduct(id, product.getName(), profit, loss, net);
         })
+        //net을 기준으로 내림차순(reversed)
+        .sorted(Comparator.comparing(ProfitLossResponse.ByProduct::net).reversed()
+        //net이 같을경우 보조 기준 : (상품 id)으로 오름차순
+        .thenComparing(ProfitLossResponse.ByProduct::productId))
         .toList();
 
-        return new ProfitLossResponse(totalRevenue, totalCost, totalProfit, consumeLoss, byProduct);
+        return new ProfitLossResponse(totalRevenue, totalCost, totalProfit, consumeLoss, netProfit, byProduct);
     }
 
 

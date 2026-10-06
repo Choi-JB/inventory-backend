@@ -14,6 +14,7 @@ import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 //@RestController에서 발생한 예외를 가로채는 전역 처리기
 @RestControllerAdvice
@@ -61,11 +62,18 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("METHOD_NOT_ALLOWED", "지원되지 않는 메서드입니다."));
     }
 
-    // 날짜 형식 예외 처리
+    // 필수 파라미터 누락 (날짜 형식 예외 처리)
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ErrorResponse> handleMissingServletRequestParameter(MissingServletRequestParameterException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("VALIDATION_ERROR", e.getParameterName()+"은(는) 필수 파라미터입니다."));
+    }
+
+    // 파라미터 타입 예외 처리
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("VALIDATION_ERROR", e.getPropertyName()+"은(는) 파라미터 타입이 올바르지 않습니다."));
     }
 
     // 그 외 예외 처리

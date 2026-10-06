@@ -8,10 +8,12 @@ public record ProfitLossResponse(
     BigDecimal totalRevenue,
     //매입비용 [OUT 목록의 costPriceSnapshot x quantity 합]
     BigDecimal totalCost,
-    // 수익 - 손실 : totalRevenue - totalCost
+    //판매 이익(소비 손실 제외) : totalRevenue - totalCost
     BigDecimal totalProfit,
     //소비 손실 : [CONSUME 목록의 costPriceSnapshot x quantity 합] 
     BigDecimal consumeLoss,
+    //최종 이익(판매 이익 - 소비 손실) : totalProfit − consumeLoss
+    BigDecimal netProfit,
     //출고 거래내역 목록
     List<ByProduct> byProduct
 ) {
@@ -23,7 +25,9 @@ public record ProfitLossResponse(
         //수익
         BigDecimal profit,
         //손실
-        BigDecimal loss
+        BigDecimal loss,
+        //판매 이익 - 소비 손실
+        BigDecimal net
     ) {
     }
 }
