@@ -22,6 +22,10 @@ import com.example.inventory.service.StockTransactionService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import com.example.inventory.dto.response.ProfitLossResponse;
+import com.example.inventory.dto.response.StockTransactionResponse;
+import com.example.inventory.enums.TransactionType;
+import com.example.inventory.enums.TransactionStatus;
+import org.springframework.data.domain.Sort;
 
 @Component
 public class InventoryQueryTools {
@@ -82,5 +86,36 @@ public class InventoryQueryTools {
         ProfitLossResponse profitLoss = stockTransactionService.getProfitLoss(startDateTime, endDateTime, productId);
 
         return ProfitLossResult.from(profitLoss, startDate, endDate);
+    }
+
+    @Tool(description = """
+            상품별·유형별·기간별 입출고 거래 이력을 최신순으로 최대 20건 조회한다. 
+            전체 건수는 totalElements이다.""")
+    public TransactionSearchResult searchTransactions(
+        @ToolParam(description = "searchProducts로 찾은 상품 id", required = false) Long productId,
+        @ToolParam(description = "IN=입고, OUT=출고(판매), CONSUME=자체소비(폐기·내부사용·샘플), ADJUSTMENT=재고조정", required = false) TransactionType type,
+        @ToolParam(description = "ACTIVE=유효,CANCELED=롤백되어 취소된 원본 거래", required = false) TransactionStatus status,
+        @ToolParam(description = "조회 시작일, yyyy-MM-dd 형식 (예: 2026-10-01)", required = false) LocalDate startDate,
+        @ToolParam(description = "조회 종료일, yyyy-MM-dd 형식 (예: 2026-10-07)", required = false) LocalDate endDate
+    ){
+        log.info("searchTransactions 호출: productId={}, type={}, status={}, startDate={}, endDate={}", productId, type, status, startDate, endDate);
+        LocalDateTime startDateTime = null;
+        LocalDateTime endDateTime = null;
+        if (startDate == null && endDate == null) {
+            startDateTime = null;
+            endDateTime = null;
+        } else if(startDate == null || endDate == null) {
+            throw new IllegalArgumentException("조회 시작일과 조회 종료일은 모두 필요합니다.");
+        }else {
+            startDateTime = startDate.atStartOfDay();
+            endDateTime = endDate.atTime(23, 59, 59);
+        }
+        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<StockTransactionResponse> transactions = stockTransactionService.search(productId, type, status, startDateTime, endDateTime, pageable);
+        
+        List<TransactionSearchResult.Item> items = transactions.getContent().stream()
+                .map(TransactionSearchResult.Item::from)
+                .collect(Collectors.toList());
+        return new TransactionSearchResult(transactions.getTotalElements(), items);
     }
 }
