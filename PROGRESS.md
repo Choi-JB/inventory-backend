@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-10-07 (거래 응답에 상품명/단위 추가, 손익 응답에 최종 이익 추가, 쿼리 파라미터 타입 오류 400 처리 포함)
+**최종 갱신**: 2026-10-07 (프론트엔드 화면 9개 완료 → 작업순서 6단계 완료, 다음 단계·백로그 정리)
 
 ---
 
@@ -81,9 +81,11 @@ main - dev - feature/*
 15. `feature/transaction-product-info` (PR #13) — 프론트 거래 목록 화면에서 필요해진 `productName`, `productUnit`을 모든 거래 응답(`StockTransactionResponse`)에 추가. `from(StockTransaction, Product)`로 시그니처 변경, `search()`는 상품을 `findAllById`로 한 번에 조회해 N+1 방지.
 16. `feature/profit-loss-net-profit` (PR #14) — 손익 응답에 `netProfit`(= `totalProfit − consumeLoss`)과 상품별 `net`(= `profit − loss`) 추가, `byProduct`를 `net` 내림차순(동률은 `productId` 오름차순)으로 정렬, `getProfitLoss()`의 상품 조회 N+1을 `findAllById`로 수정. 잘못된 쿼리 파라미터 타입(날짜/enum/숫자)이 500으로 나가던 문제를 400으로 처리(`MethodArgumentTypeMismatchException` 핸들러). 결정 배경은 아래 3번 참고.
 
-**진행 중**: 없음 (백엔드는 프론트엔드 연동 중 발견되는 이슈 대응 위주).
+**진행 중**: 없음.
 
-**다음**: 프론트엔드 쪽에서 손익 화면(카드 라벨: `totalProfit`=판매 이익, `netProfit`=최종 이익)과 말단 규칙 관련 UI 정리(`leafOnly`, 안내 문구), 타입 재생성(거래 응답/손익 응답에 추가된 필드 반영). 프론트엔드는 별도 레포(`inventory-frontend`)에서 진행 중이고 설계 결정은 `문서/재고관리_챗봇_프론트엔드설계서.md`에 기록돼 있음.
+**프론트엔드**: 2026-10-07 기준 설계서 5장의 화면 9개 전부 완료(`inventory-frontend` PR #1~#11) → **작업순서 문서 6단계 완료**. 프론트 쪽 결정·교훈은 `문서/재고관리_챗봇_프론트엔드설계서.md` 11장에 정리.
+
+**다음**: 작업순서 7단계 — 챗봇 명세서 작성부터 (아래 5장).
 
 ---
 
@@ -179,15 +181,21 @@ main - dev - feature/*
 
 ## 5. 다음 단계
 
-백엔드(`inventory-backend`)는 `feature/profit-loss-net-profit`(#14)까지 `dev`에 merge 완료. 다음 세션 목표:
+백엔드 `dev`는 PR #15까지, 프론트엔드 `dev`는 PR #11까지 merge 완료. **작업순서 1~6단계(백엔드 코어 + 프론트엔드) 전부 완료.**
 
-1. 프론트엔드(`inventory-frontend`) 손익 화면 — 카드 라벨을 `totalProfit`="판매 이익", `netProfit`="최종 이익"으로 표시, `byProduct`는 서버가 `net` 내림차순으로 내려주므로 그대로 사용. 날짜 파라미터는 `yyyy-MM-ddTHH:mm:ss`로 전송(설계서 6.4). TS 타입은 손익/거래 응답에 추가된 필드(`netProfit`, `net`, `productName`, `productUnit`) 반영해서 재생성
-2. 프론트엔드(`inventory-frontend`) 정리 — 말단 규칙 제거(#10)에 맞춰 `categories/page.tsx` 안내 문구, 상품 등록·수정 화면의 `CategoryTreeSelect` `leafOnly` 옵션 제거. 백엔드 `@Operation` 문구가 바뀌었으니 `/v3/api-docs`로 TS 타입 재생성(`types/api.ts`). 페이징 응답이 `page` 형식으로 바뀐 것(#9)을 쓰는 코드도 확인
-   - 타입 생성 시 `openapi-typescript --properties-required-by-default` 및 nullable 필드 보정 (위 "알려진 한계" 참고)
-   - (원래 계획) 작업순서 문서 6단계 — **Next.js 프론트엔드** (레포구성_브랜치전략 문서 기준 `feature/frontend-minimal` 브랜치부터)
-   - 프론트엔드에서 백엔드 API 호출 시 `fetch(..., { credentials: 'include' })` 잊지 말 것 — 안 넣으면 쿠키가 안 실려서 인증 실패
-   - 로그인 버튼 → `http://localhost:8080/oauth2/authorization/google`로 이동시키면 됨 (전체 페이지 이동, `fetch` 아님)
-   - 로그인 성공 후 `localhost:3000`으로 리다이렉트 → 프론트는 `GET /api/auth/me`(쿠키 자동 전송)로 로그인 여부/role 확인 → ADMIN 전용 UI 분기에 사용
-   - 로그아웃은 `POST /api/auth/logout` 호출(바디 없음, `credentials:'include'` 필수)
-   - 인증 안 된 상태로 보호된 API 호출 시 401 JSON이 내려오니, 프론트에서 401 받으면 로그인 페이지로 리다이렉트하는 공통 처리(예: fetch 래퍼) 만들어두면 편함
-3. 프론트엔드 완성 후 → 챗봇 명세서 작성 및 구현 (Gemini function calling, RAG)
+### 5.1 다음 목표 — 작업순서 7단계: 챗봇
+1. **챗봇 명세서 작성** (`문서/` 폴더, 다른 설계서와 같은 형식) — 코드보다 먼저
+   - 라우팅 구조: 질문을 DB 조회(정형 데이터)로 보낼지, 매뉴얼 RAG(pgvector)로 보낼지
+   - Gemini function calling에 노출할 tool 목록 — 기존 Service 메서드 재사용이 전제(패키지구조설계서 2.5, 레포구성 1장: 챗봇은 같은 Spring 서버, HTTP 왕복 없이 Service 직접 호출)
+   - 권한: tool 실행도 로그인 사용자 role 기준(ADMIN 전용 기능을 챗봇으로 우회하지 않게)
+   - 기술 선택: Spring AI vs LangChain4j, `manual_embeddings`(vector 768) 차원과 임베딩 모델
+2. 백엔드 `feature/chatbot-routing` 구현
+3. 프론트 오른쪽 챗봇 패널(`components/layout/chat-panel.tsx`, 현재 자리만 있음)에 대화 UI 연결
+
+### 5.2 백로그 (프론트엔드 작업 중 발견, 우선순위 낮음)
+- **409 메시지를 사용자용 문구로 정리** — 상품 id·단위 없는 숫자가 섞여 있음. 예: 롤백 `"재고 수량이 부족합니다: 9 (복구 수량: 2000, 재고 수량: 1300)"`, `"ADUSTMENT 거래내역은…"`(오타 포함), `"이미 취소된 거래내역입니다: 12"`. 명세서 1장 원칙: `message`는 그대로 사용자에게 보여줄 문구. 챗봇도 같은 메시지를 쓰게 되므로 7단계 전에 정리하면 좋음
+- `ProductCreateRequest`/`ProductUpdateRequest.minStockLevel`에 `@PositiveOrZero` (프론트 zod가 막고 있지만 백엔드에도 필요)
+- SKU 동시 등록 시 `existsBySku` 통과 후 UNIQUE 위반 → `DataIntegrityViolationException`이 catch-all 500 → 전용 409 핸들러
+- `ConflictException` 코드를 `"CONFLICT"` 대신 구체화(예: `DUPLICATE_SKU`) — 프론트가 `error.code`로 필드별 에러 위치를 잡을 수 있게
+- 재고조정 차이가 0이어도 거래가 기록됨 (프론트는 버튼 비활성화로 막는 중) → 백엔드에서도 거절할지 결정
+- 테스트 데이터 정리: `TEST-`로 시작하는 상품과 그 거래(거래 이력이 있어 화면에서 삭제 불가 → DB에서 정리)
