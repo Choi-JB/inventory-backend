@@ -11,6 +11,11 @@ spring:
       hibernate:
         format_sql: true
     show-sql: true
+  ai:
+    google:
+      genai:
+        chat:
+          model: models/gemini-3.1-flash-lite
 
 frontend:
   url: http://localhost:3000
