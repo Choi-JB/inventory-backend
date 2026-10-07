@@ -59,11 +59,19 @@ public final class ToolFormatter {
             case ML -> "L";
         };
 
+        return formatWon(displayPrice) + "/" + priceUnit;
+    }
+
+    /**
+     * 금액 → "1,800,000원" (원 단위 정수, 음수는 "-150,000원")
+     * 프론트 format.ts의 formatWon과 같은 규칙
+     */
+    public static String formatWon(BigDecimal amount) {
         // 원 단위 정수로 표시. DecimalFormat 기본 반올림(HALF_EVEN) 대신
         // 프론트(Intl.NumberFormat)와 같은 사사오입(HALF_UP)으로 맞춤 (45.5원 → 46원)
         DecimalFormat format = new DecimalFormat("#,##0");
         format.setRoundingMode(RoundingMode.HALF_UP);
 
-        return format.format(displayPrice) + "원/" + priceUnit;
+        return format.format(amount) + "원";
     }
 }

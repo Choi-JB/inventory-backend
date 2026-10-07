@@ -18,19 +18,24 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import com.example.inventory.dto.response.CategoryTreeResponse;
 import com.example.inventory.service.CategoryService;
+import com.example.inventory.service.StockTransactionService;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import com.example.inventory.dto.response.ProfitLossResponse;
 
 @Component
 public class InventoryQueryTools {
 
-    // ProductService 주입 (필드 + 생성자, 컨트롤러에서 서비스 주입한 것과 같은 방식)
     private final ProductService productService;
     private final CategoryService categoryService;
+    private final StockTransactionService stockTransactionService;
 
     private static final Logger log = LoggerFactory.getLogger(InventoryQueryTools.class);
 
-    public InventoryQueryTools(ProductService productService, CategoryService categoryService) {
+    public InventoryQueryTools(ProductService productService, CategoryService categoryService, StockTransactionService stockTransactionService) {
         this.productService = productService;
         this.categoryService = categoryService;
+        this.stockTransactionService = stockTransactionService;
     }
 
     @Tool(description = "상품명 또는 SKU로 상품을 검색해 현재 재고, 최소 재고, 재고 부족 여부, 판매가를 조회한다")
@@ -59,5 +64,23 @@ public class InventoryQueryTools {
         log.info("getCategoryTree 호출");
         List<CategoryTreeResponse> categoryTree = categoryService.getTree();
         return categoryTree;
+    }
+
+    @Tool(description = """
+        출고 매출, 매입비용, 판매 이익, 소비 손실, 최종 이익을 조회한다. 
+        상품 ID가 있으면 해당 상품의 손익만 조회한다.
+        조회 기간은 시작일부터 종료일까지(포함)이다.
+        순이익·최종 이익을 물으면 netProfit으로 답한다.""")
+    public ProfitLossResult getProfitLoss(
+        @ToolParam(description = "조회 시작일, yyyy-MM-dd 형식 (예: 2026-10-01)") LocalDate startDate,
+        @ToolParam(description = "조회 종료일, yyyy-MM-dd 형식 (예: 2026-10-07)") LocalDate endDate,
+        @ToolParam(description = "searchProducts로 찾은 상품 id", required = false) Long productId
+    ) {
+        log.info("getProfitLoss 호출: startDate={}, endDate={}, productId={}", startDate, endDate, productId);
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
+        ProfitLossResponse profitLoss = stockTransactionService.getProfitLoss(startDateTime, endDateTime, productId);
+
+        return ProfitLossResult.from(profitLoss, startDate, endDate);
     }
 }
