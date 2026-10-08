@@ -36,7 +36,7 @@ public class ChatController {
     @Operation(summary = "챗봇 채팅", description = "ADMIN 또는 STAFF 전용. 채팅 기능을 제공합니다.")
     @PostMapping
     public ResponseEntity<ChatResponse> chat(@Valid @RequestBody ChatRequest request) {
-        String answer = chatService.chat(request.message());
+        String answer = chatService.chat(request);
         ChatResponse chatResponse = new ChatResponse(answer);
         return ResponseEntity.ok(chatResponse);
     }

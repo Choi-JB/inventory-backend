@@ -12,6 +12,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import com.example.inventory.dto.request.ChatRequest;
+import com.example.inventory.dto.request.ChatHistoryMessage;
+import java.util.List;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import java.util.ArrayList;
+import java.util.Collections;
 
 @Service
 public class ChatService {
@@ -38,6 +46,7 @@ public class ChatService {
         ## 데이터 원칙
         - 재고, 거래, 손익 수치는 반드시 tool 결과로만 답한다. 추측하거나 지어내지 않는다.
         - tool 결과의 수량과 금액은 표시된 그대로 쓴다. 단위를 바꾸거나 직접 계산하지 않는다.
+        - 판매가·단가는 "15,000원/kg", "45원/개"처럼 기준 단위까지 그대로 쓴다. "/kg", "/L", "/개"를 빼고 "15,000원"으로만 쓰지 않는다.
         - 합계나 총량(예: 이번 달 총 출고량)은 직접 더하지 않는다. "합계는 제공하지 않습니다"라고 안내하고, 필요하면 건수(totalElements)만 알려준다.
         - 이익을 물으면 최종 이익(netProfit)으로 답한다.
 
@@ -74,12 +83,15 @@ public class ChatService {
      * @param message 사용자 메시지
      * @return 채팅 응답
      */
-    public String chat(String message) {
+    public String chat(ChatRequest request) {
+        List<Message> previous = toMessages(request.history());
+
         long start = System.currentTimeMillis();
         try{
             String response = this.chatClient.prompt()
                 .system(SYSTEM_PROMPT + "\n오늘 날짜: " + LocalDate.now(ZoneId.of("Asia/Seoul")))
-                .user(message)
+                .messages(previous)
+                .user(request.message())
                 .call()
                 .content();
             log.info("채팅 소요 시간: {}ms", System.currentTimeMillis()-start);
@@ -131,5 +143,29 @@ public class ChatService {
             t = t.getCause();
         }
         return null;
+    }
+
+    /**
+     * 채팅 이력 메시지를 Message 리스트로 변환
+     * @param history 채팅 이력 메시지
+     * @return Message 리스트
+     */
+    private List<Message> toMessages(List<ChatHistoryMessage> history) {
+        // 1: history가 null 이면 빈 리스트 반환
+        if (history == null) {
+            return Collections.emptyList();
+        }
+        // 2: 10개 넘으면 마지막 10개만 — subList(size - 10, size)
+        List<ChatHistoryMessage> limited = history.subList(Math.max(0, history.size() - 10), history.size());
+        // 3: role이 "user"면 UserMessage, "assistant"면 AssistantMessage로 변환
+        List<Message> messages = new ArrayList<>(limited.size());
+        for (ChatHistoryMessage message : limited) {
+            if (message.role().equals("user")) {
+                messages.add(new UserMessage(message.content()));
+            } else {
+                messages.add(new AssistantMessage(message.content()));
+            }
+        }
+        return messages;
     }
 }
