@@ -11,6 +11,17 @@ spring:
       hibernate:
         format_sql: true
     show-sql: true
+  ai:
+    google:
+      genai:
+        chat:
+          model: models/gemini-3.1-flash-lite
 
 frontend:
   url: http://localhost:3000
+
+# Gemini 호출 설정 (config/ChatConfig에서 사용)
+chat:
+  gemini:
+    timeout-ms: 20000     # 호출 1번당 최대 대기 시간. 넘으면 포기하고 503(CHAT_UNAVAILABLE)
+    retry-attempts: 1     # Google SDK 자동 재시도 횟수. 1 = 재시도 없음 (기본값은 5번, 약 30초)
