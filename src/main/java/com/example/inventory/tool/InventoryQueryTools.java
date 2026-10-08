@@ -90,15 +90,16 @@ public class InventoryQueryTools {
 
     @Tool(description = """
             상품별·유형별·기간별 입출고 거래 이력을 최신순으로 최대 20건 조회한다. 
-            전체 건수는 totalElements이다.""")
+            전체 건수는 totalElements이다.
+            기본값은 실제로 유효한 거래만 조회한다 (롤백으로 취소된 원본 거래와 취소 거래는 제외).""")
     public TransactionSearchResult searchTransactions(
         @ToolParam(description = "searchProducts로 찾은 상품 id", required = false) Long productId,
         @ToolParam(description = "IN=입고, OUT=출고(판매), CONSUME=자체소비(폐기·내부사용·샘플), ADJUSTMENT=재고조정", required = false) TransactionType type,
-        @ToolParam(description = "ACTIVE=유효,CANCELED=롤백되어 취소된 원본 거래", required = false) TransactionStatus status,
+        @ToolParam(description = "true면 롤백으로 취소된 원본 거래와 취소(상쇄) 거래도 포함한다. 취소된 거래, 롤백 내역, 전체 이력을 물을 때만 true", required = false) Boolean includeCanceled,
         @ToolParam(description = "조회 시작일, yyyy-MM-dd 형식 (예: 2026-10-01)", required = false) LocalDate startDate,
         @ToolParam(description = "조회 종료일, yyyy-MM-dd 형식 (예: 2026-10-07)", required = false) LocalDate endDate
     ){
-        log.info("searchTransactions 호출: productId={}, type={}, status={}, startDate={}, endDate={}", productId, type, status, startDate, endDate);
+        log.info("searchTransactions 호출: productId={}, type={}, includeCanceled={}, startDate={}, endDate={}", productId, type, includeCanceled, startDate, endDate);
         LocalDateTime startDateTime = null;
         LocalDateTime endDateTime = null;
         if (startDate == null && endDate == null) {
@@ -111,7 +112,10 @@ public class InventoryQueryTools {
             endDateTime = endDate.atTime(23, 59, 59);
         }
         Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<StockTransactionResponse> transactions = stockTransactionService.search(productId, type, status, startDateTime, endDateTime, pageable);
+        boolean effectiveOnly = !Boolean.TRUE.equals(includeCanceled);   // null이나 false면 유효한 거래만
+        TransactionStatus status = effectiveOnly ? TransactionStatus.ACTIVE : null;  // 취소된 원본 제외
+
+        Page<StockTransactionResponse> transactions = stockTransactionService.search(productId, type, status, startDateTime, endDateTime, effectiveOnly, pageable);
         
         List<TransactionSearchResult.Item> items = transactions.getContent().stream()
                 .map(TransactionSearchResult.Item::from)

@@ -71,23 +71,29 @@ public class StockTransactionService {
     }
 
     // 손익계산 조회 (날짜 범위, 상품 id, 거래 유형)
-    private List<StockTransaction> findProfitLossTransactions(LocalDateTime startDate, LocalDateTime endDate, Long productId, TransactionType type) {
+    private List<StockTransaction> findProfitLossTransactions(LocalDateTime startDate, LocalDateTime endDate,
+            Long productId, TransactionType type) {
         Specification<StockTransaction> spec = (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
         spec = spec.and(dateRange(startDate, endDate));
         spec = spec.and(type(type));
         spec = spec.and(status(TransactionStatus.ACTIVE));
         spec = spec.and(excludeReversal());
-        if ( productId != null ) {
+        if (productId != null) {
             spec = spec.and(productId(productId));
         }
         return stockTransactionRepository.findAll(spec);
     }
 
-    //------------------------------------
-
-    // 거래내역 조회 (상품 id, 거래 유형, 거래 상태, 날짜 범위, 페이지네이션)
+    // ------------------------------------
+    // 거래내역 조회 (상품 id, 거래 유형, 거래 상태, 날짜 범위, 페이지네이션) — 거래 이력 화면용, 롤백 거래 포함
     public Page<StockTransactionResponse> search(Long productId, TransactionType type, TransactionStatus status,
             LocalDateTime startDate, LocalDateTime endDate, Pageable pageable) {
+        return search(productId, type, status, startDate, endDate, false, pageable); // 새 버전에 위임
+    }
+
+    // excludeReversal = true면 롤백으로 생긴 상쇄 거래("입고 취소" 등)를 뺌 — 챗봇의 "유효한 거래만" 조회용
+    public Page<StockTransactionResponse> search(Long productId, TransactionType type, TransactionStatus status,
+            LocalDateTime startDate, LocalDateTime endDate, boolean excludeReversal, Pageable pageable) {
         Specification<StockTransaction> spec = (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
 
         if (productId != null) {
@@ -102,22 +108,25 @@ public class StockTransactionService {
         if (startDate != null && endDate != null) {
             spec = spec.and(dateRange(startDate, endDate));
         }
+        if (excludeReversal) { // 롤백 거래 제외
+            spec = spec.and(excludeReversal());
+        }
 
         Page<StockTransaction> stockTransactions = stockTransactionRepository.findAll(spec, pageable);
-        
+
         // 1단계: 이 페이지의 거래들에서 productId만 모으기 (중복 제거)
         Set<Long> productIds = stockTransactions.getContent().stream()
-                                .map(st -> st.getProductId())
-                                .collect(Collectors.toSet());
+                .map(st -> st.getProductId())
+                .collect(Collectors.toSet());
 
         // 2단계: 그 id들의 상품을 쿼리 한 번으로 가져오기
         // "productId를 모아 상품을 한 번에 조회 (N+1 방지)"
         // 3단계: id로 바로 찾을 수 있게 Map으로 바꾸기
         Map<Long, Product> productMap = productRepository.findAllById(productIds).stream()
-                                        .collect(Collectors.toMap(
-                                            Product::getId,     // 키: 상품의 id
-                                            product -> product  // 값: 상품 자체
-                                        ));
+                .collect(Collectors.toMap(
+                        Product::getId, // 키: 상품의 id
+                        product -> product // 값: 상품 자체
+                ));
 
         // 4단계: 각 거래마다 Map에서 자기 상품을 꺼내 from(거래, 상품)에 넘기기
         return stockTransactions.map(tx -> StockTransactionResponse.from(tx, productMap.get(tx.getProductId())));
@@ -132,7 +141,6 @@ public class StockTransactionService {
         return StockTransactionResponse.from(stockTransaction, product);
     }
 
-    
     // 재고 입고
     @Transactional
     public StockTransactionResponse stockIn(Long productId, Long userId, Integer quantity, BigDecimal unitPrice,
@@ -280,82 +288,83 @@ public class StockTransactionService {
     // 수익/손실 조회
     @Transactional
     public ProfitLossResponse getProfitLoss(LocalDateTime startDate, LocalDateTime endDate, Long productId) {
-        //출고 거래내역 조회
-        List<StockTransaction> outTransactions = findProfitLossTransactions(startDate, endDate, productId, TransactionType.OUT);
-        //소비 거래내역 조회
-        List<StockTransaction> consumeTransactions = findProfitLossTransactions(startDate, endDate, productId, TransactionType.CONSUME);
+        // 출고 거래내역 조회
+        List<StockTransaction> outTransactions = findProfitLossTransactions(startDate, endDate, productId,
+                TransactionType.OUT);
+        // 소비 거래내역 조회
+        List<StockTransaction> consumeTransactions = findProfitLossTransactions(startDate, endDate, productId,
+                TransactionType.CONSUME);
 
-        //출고 매출 계산 (출고 거래내역의 단가 x 수량)
+        // 출고 매출 계산 (출고 거래내역의 단가 x 수량)
         BigDecimal totalRevenue = outTransactions.stream()
-                .map(stockTransaction -> stockTransaction.getUnitPrice().multiply(new BigDecimal(stockTransaction.getQuantity())))
+                .map(stockTransaction -> stockTransaction.getUnitPrice()
+                        .multiply(new BigDecimal(stockTransaction.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        //출고 비용 계산 (출고 거래내역의 비용 x 수량)
+        // 출고 비용 계산 (출고 거래내역의 비용 x 수량)
         BigDecimal totalCost = outTransactions.stream()
-                .map(stockTransaction -> stockTransaction.getCostPriceSnapshot().multiply(new BigDecimal(stockTransaction.getQuantity())))
+                .map(stockTransaction -> stockTransaction.getCostPriceSnapshot()
+                        .multiply(new BigDecimal(stockTransaction.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        //매출 - 비용 = 수익
+        // 매출 - 비용 = 수익
         BigDecimal totalProfit = totalRevenue.subtract(totalCost);
 
-        //소비 손실 계산 (소비 거래내역의 비용 x 수량)
+        // 소비 손실 계산 (소비 거래내역의 비용 x 수량)
         BigDecimal consumeLoss = consumeTransactions.stream()
-                .map(stockTransaction -> stockTransaction.getCostPriceSnapshot().multiply(new BigDecimal(stockTransaction.getQuantity())))
+                .map(stockTransaction -> stockTransaction.getCostPriceSnapshot()
+                        .multiply(new BigDecimal(stockTransaction.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        //최종 이익
+        // 최종 이익
         BigDecimal netProfit = totalProfit.subtract(consumeLoss);
 
-        //제품별 수익 계산
+        // 제품별 수익 계산
         Map<Long, BigDecimal> profitByProduct = outTransactions.stream()
-            .collect(Collectors.groupingBy(
-                StockTransaction::getProductId, 
-                Collectors.reducing(BigDecimal.ZERO, 
-                    st->st.getUnitPrice().multiply(BigDecimal.valueOf(st.getQuantity())).subtract(st.getCostPriceSnapshot().multiply(BigDecimal.valueOf(st.getQuantity()))),
-                    BigDecimal::add
-                )));
-        
-        //제품별 손실 계산
-        Map<Long, BigDecimal> lossByProduct = consumeTransactions.stream()
-            .collect(Collectors.groupingBy(
-                StockTransaction::getProductId, 
-                Collectors.reducing(BigDecimal.ZERO, 
-                    st->st.getCostPriceSnapshot().multiply(BigDecimal.valueOf(st.getQuantity())),
-                    BigDecimal::add
-                )));
+                .collect(Collectors.groupingBy(
+                        StockTransaction::getProductId,
+                        Collectors.reducing(BigDecimal.ZERO,
+                                st -> st.getUnitPrice().multiply(BigDecimal.valueOf(st.getQuantity())).subtract(
+                                        st.getCostPriceSnapshot().multiply(BigDecimal.valueOf(st.getQuantity()))),
+                                BigDecimal::add)));
 
-        //제품별 수익/손실 계산을 위한 제품 ID 조회
+        // 제품별 손실 계산
+        Map<Long, BigDecimal> lossByProduct = consumeTransactions.stream()
+                .collect(Collectors.groupingBy(
+                        StockTransaction::getProductId,
+                        Collectors.reducing(BigDecimal.ZERO,
+                                st -> st.getCostPriceSnapshot().multiply(BigDecimal.valueOf(st.getQuantity())),
+                                BigDecimal::add)));
+
+        // 제품별 수익/손실 계산을 위한 제품 ID 조회
         Set<Long> productIds = new HashSet<>();
         productIds.addAll(profitByProduct.keySet());
         productIds.addAll(lossByProduct.keySet());
-        
+
         Map<Long, Product> productMap = productRepository.findAllById(productIds).stream()
-                                            .collect(Collectors.toMap(
-                                                Product::getId, 
-                                                product -> product
-                                            ));
+                .collect(Collectors.toMap(
+                        Product::getId,
+                        product -> product));
 
-
-        //제품별 수익/손실 계산 (상품 조회 후 수익/손실 계산)
+        // 제품별 수익/손실 계산 (상품 조회 후 수익/손실 계산)
         List<ProfitLossResponse.ByProduct> byProduct = productIds.stream()
-        .map(id -> {
-            Product product = productMap.get(id);
-            if(product == null){
-                throw new NotFoundException("상품을 찾을 수 없습니다: " + id);
-            }
-            BigDecimal profit = profitByProduct.getOrDefault(id, BigDecimal.ZERO);
-            BigDecimal loss = lossByProduct.getOrDefault(id, BigDecimal.ZERO);
-            BigDecimal net = profit.subtract(loss);
-            return new ProfitLossResponse.ByProduct(id, product.getName(), profit, loss, net);
-        })
-        //net을 기준으로 내림차순(reversed)
-        .sorted(Comparator.comparing(ProfitLossResponse.ByProduct::net).reversed()
-        //net이 같을경우 보조 기준 : (상품 id)으로 오름차순
-        .thenComparing(ProfitLossResponse.ByProduct::productId))
-        .toList();
+                .map(id -> {
+                    Product product = productMap.get(id);
+                    if (product == null) {
+                        throw new NotFoundException("상품을 찾을 수 없습니다: " + id);
+                    }
+                    BigDecimal profit = profitByProduct.getOrDefault(id, BigDecimal.ZERO);
+                    BigDecimal loss = lossByProduct.getOrDefault(id, BigDecimal.ZERO);
+                    BigDecimal net = profit.subtract(loss);
+                    return new ProfitLossResponse.ByProduct(id, product.getName(), profit, loss, net);
+                })
+                // net을 기준으로 내림차순(reversed)
+                .sorted(Comparator.comparing(ProfitLossResponse.ByProduct::net).reversed()
+                        // net이 같을경우 보조 기준 : (상품 id)으로 오름차순
+                        .thenComparing(ProfitLossResponse.ByProduct::productId))
+                .toList();
 
         return new ProfitLossResponse(totalRevenue, totalCost, totalProfit, consumeLoss, netProfit, byProduct);
     }
-
 
 }
