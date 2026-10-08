@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.ai.chat.client.ChatClient;
 import com.example.inventory.tool.InventoryQueryTools;
 import com.google.genai.errors.ApiException;
+import com.google.genai.errors.GenAiIOException;
 import com.example.inventory.exception.ChatRateLimitedException;
 import com.example.inventory.exception.ChatUnavailableException;
 import org.slf4j.Logger;
@@ -75,6 +76,10 @@ public class ChatService {
         } catch (RuntimeException e) {
             ApiException apiException = findApiException(e);
             if (apiException == null) {
+                if (findGenAiIOException(e) != null) {
+                    log.warn("Gemini 호출 실패: GenAiIOException, {}ms", System.currentTimeMillis()-start, e);
+                    throw new ChatUnavailableException("AI 응답이 일시적으로 지연되고 있습니다. 잠시 후 다시 시도해주세요.");
+                }
                 throw e;
             }
             log.warn("Gemini 호출 실패: code={}, {}ms", apiException.code(), System.currentTimeMillis()-start, e);
@@ -100,6 +105,17 @@ public class ChatService {
         while (t != null) {
             if (t instanceof ApiException) {
                 return (ApiException) t;
+            }
+            t = t.getCause();
+        }
+        return null;
+    }
+
+    private GenAiIOException findGenAiIOException(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            if (t instanceof GenAiIOException) {
+                return (GenAiIOException) t;
             }
             t = t.getCause();
         }
