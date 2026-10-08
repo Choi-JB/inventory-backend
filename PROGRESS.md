@@ -1,7 +1,7 @@
 # 진행 상황 & 컨텍스트 노트
 
 **목적**: 다른 컴퓨터/새 세션에서 이어서 작업할 때 지금까지의 설계 결정과 트러블슈팅 이력을 빠르게 파악하기 위한 문서.
-**최종 갱신**: 2026-10-07 (프론트엔드 화면 9개 완료 → 작업순서 6단계 완료, 다음 단계·백로그 정리)
+**최종 갱신**: 2026-10-08 (챗봇 백엔드 완료 — 명세서 작성 + PR #17~#19, 다음은 프론트 챗봇 패널)
 
 ---
 
@@ -45,6 +45,25 @@ jwt:
   secret: <32자 이상 랜덤 문자열>
   expiration: 86400000
 ```
+챗봇(PR #17~) 이후에는 `spring:` 아래에 Gemini API 키도 필요 (AI Studio에서 발급, 채팅·임베딩 같은 키):
+```yaml
+spring:
+  ai:
+    google:
+      genai:
+        api-key: <Gemini API 키>
+        embedding:
+          api-key: ${spring.ai.google.genai.api-key}   # 임베딩은 채팅 키를 자동으로 따라가지 않음
+```
+`embedding:`은 반드시 `genai:` **안쪽**. 바깥에 두면 `spring.ai.google.embedding.api-key`가 되어 무시되고 서버 기동이 실패함(실제로 겪음).
+
+### Spring AI / Gemini 주의사항 (챗봇)
+- **Spring AI는 2.x**(Boot 4 기준, BOM `spring-ai-bom`). 1.x는 Boot 3용. 의존성은 반드시 **스타터**(`spring-ai-starter-...`) — 본체(`spring-ai-google-genai`)만 넣으면 자동 설정이 없어 `ChatClient.Builder` 빈이 안 생김.
+- **기본 모델값이 이미 종료된 모델**: 채팅 기본 `gemini-2.5-flash`(신규 사용자 404), 임베딩 기본 `text-embedding-004`(2026-01 종료). `application.yaml`에 모델명(`gemini-3.1-flash-lite`, `gemini-embedding-001` + 768차원)을 반드시 명시.
+- **설정 이름이 틀려도 에러 없이 무시됨** → 새 설정을 넣으면 jar의 `spring-configuration-metadata.json`과 대조해 볼 것.
+- Gemini 예외는 Spring AI가 `RuntimeException("Failed to generate content")`으로 감쌈 → 원인은 로그의 `Caused by:` 줄에 있음.
+- **IDE에 새 의존성이 안 보이면** Gradle 새로고침 (터미널 `bootRun`은 매번 `build.gradle`을 새로 읽어서 정상 동작함).
+- 콘솔 한글 로그 깨짐(아래 3장)은 챗봇 디버깅 때 특히 불편 — PowerShell에서 서버 띄우기 전 `chcp 65001`.
 `jwt.secret`은 `openssl rand -base64 64` (Git Bash) 또는 PowerShell `[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(64))`로 생성.
 
 **Google Cloud Console**에도 승인된 리디렉션 URI로 `http://localhost:8080/api/auth/google/callback` 등록 필요.
@@ -81,11 +100,17 @@ main - dev - feature/*
 15. `feature/transaction-product-info` (PR #13) — 프론트 거래 목록 화면에서 필요해진 `productName`, `productUnit`을 모든 거래 응답(`StockTransactionResponse`)에 추가. `from(StockTransaction, Product)`로 시그니처 변경, `search()`는 상품을 `findAllById`로 한 번에 조회해 N+1 방지.
 16. `feature/profit-loss-net-profit` (PR #14) — 손익 응답에 `netProfit`(= `totalProfit − consumeLoss`)과 상품별 `net`(= `profit − loss`) 추가, `byProduct`를 `net` 내림차순(동률은 `productId` 오름차순)으로 정렬, `getProfitLoss()`의 상품 조회 N+1을 `findAllById`로 수정. 잘못된 쿼리 파라미터 타입(날짜/enum/숫자)이 500으로 나가던 문제를 400으로 처리(`MethodArgumentTypeMismatchException` 핸들러). 결정 배경은 아래 3번 참고.
 
+17. `feature/chatbot-routing` (PR #17) — Spring AI 2.0 + Gemini 연결, `POST /api/chat`. DB 조회 tool 4개(`searchProducts`, `getCategoryTree`, `getProfitLoss`, `searchTransactions`), tool 결과를 표시용 문자열로 축약(단위·금액·롤백 라벨), 시스템 프롬프트, Gemini 429/503/타임아웃 처리, 호출 타임아웃 20초·SDK 재시도 끔(`config/ChatConfig`).
+18. `feature/chatbot-rag` (PR #18) — 업무 매뉴얼 6개(`resources/manuals`), `manual_embeddings`를 PgVectorStore 구조로 재생성, `##` 단위 청킹·적재(`POST /api/admin/manuals/reindex`), `searchManual` tool(유사도 임계값 0.69, 측정으로 결정).
+19. `feature/chatbot-history-sources` (PR #19) — 요청 `history`(최근 10개, role 검증), 응답 `sources`(검색된 관련 매뉴얼, `ToolContext`로 수집), thinking-level LOW. **→ 챗봇 백엔드(명세서 7.3의 1~4단계) 완료.**
+
 **진행 중**: 없음.
 
 **프론트엔드**: 2026-10-07 기준 설계서 5장의 화면 9개 전부 완료(`inventory-frontend` PR #1~#11) → **작업순서 문서 6단계 완료**. 프론트 쪽 결정·교훈은 `문서/재고관리_챗봇_프론트엔드설계서.md` 11장에 정리.
 
-**다음**: 작업순서 7단계 — 챗봇 명세서 작성부터 (아래 5장).
+**챗봇**: 설계·결정·측정값·백로그는 전부 `문서/재고관리_챗봇_챗봇명세서.md`에 기록 (이 문서 3장에는 다른 기능에도 해당하는 교훈만 요약).
+
+**다음**: 프론트 챗봇 패널 연결 (아래 5장).
 
 ---
 
@@ -167,6 +192,14 @@ main - dev - feature/*
   - **날짜 파라미터 형식 결정: `yyyy-MM-ddTHH:mm:ss`로 고정 (A안).** 컨트롤러의 `LocalDateTime` 파라미터는 `@DateTimeFormat` 없이도 ISO 날짜시간만 받음. 대안은 B) `@DateTimeFormat(iso = DATE_TIME)` 명시(동작 동일, springdoc에 `date-time`으로 더 분명히 표기) C) 날짜만 허용하고 종료일을 서버가 `23:59:59`로 보정(규칙이 늘어남). 프론트엔드설계서 6.4가 이미 "시작 `00:00:00`, 종료 `23:59:59`로 직접 조립해 전송"으로 정해 둬서 서버가 날짜만 받아줄 필요가 적다고 보고 A 채택. API 명세서 5장에 형식 명시, 1장 400 설명에 "타입/형식 오류" 추가.
   - 수동 테스트 시 날짜는 `startDate=2026-09-01T00:00:00&endDate=2026-09-30T23:59:59`처럼 시각까지 넣을 것. 로그인 안 된 상태에서는 400이 아니라 401이 나오는 게 정상.
 - **`Pageable` 파라미터에는 `@ParameterObject`(`org.springdoc.core.annotations.ParameterObject`)**: 없으면 springdoc이 `pageable`이라는 필수 객체 파라미터 하나로 문서화해서, 스펙 기반 TS 타입이 `?pageable=...`을 보내는 것처럼 생성됨. 실제 API 동작은 원래 `page/size/sort`로 정상이고 **문서에만** 영향. 붙이면 `page`, `size`, `sort` 선택 파라미터 3개로 펼쳐짐.
+- **챗봇 구현에서 얻은, 다른 기능에도 해당하는 교훈** (자세한 내용은 챗봇 명세서):
+  - **자동 설정 빈은 같은 타입의 빈을 직접 만들면 대체된다** (`@ConditionalOnMissingBean`). Spring AI에 Gemini 타임아웃 설정이 없어서 `ChatConfig`에서 Google `Client` 빈을 직접 만듦 — 이때 자동 설정이 하던 일(API 키 주입)도 우리 몫이 됨.
+  - **라이브러리 기본 동작을 의심할 것**: Google SDK가 503에서 **몰래 5번(약 30초) 재시도**해서 질문 하나가 몇 분씩 응답이 없었음. 로그에는 아무것도 안 남음 → 로컬 가짜 서버(`HttpServer`)로 재시도 횟수·타임아웃 단위(ms)를 실험해서 확인.
+  - **감싸진 예외는 `getCause()`를 따라가며 찾는다**: `e instanceof X`는 바깥 포장만 봄. `catch`에서 우리 예외로 바꿔 던질 때는 **바꾸기 전에 원래 예외를 `warn` 로그로** 남길 것(`BusinessException` 핸들러는 로그를 안 남김).
+  - **싱글톤 빈의 필드에 요청별 데이터를 담지 말 것**: 동시 요청끼리 섞임. 요청마다 `new`로 만든 객체를 넘겨야 함(챗봇은 `ToolContext`로 전달).
+  - **값을 추측하지 말고 측정**: 벡터 검색 유사도 임계값은 "매뉴얼에 있는 질문 / 없는 질문"의 점수를 로그로 비교해서 정함(0.69). 이런 값은 코드가 아니라 `application.yaml`에 두고 근거를 주석·문서에 남김.
+  - **YAML 들여쓰기 실수가 챗봇 설정에서도 반복됨** (`embedding:`이 `genai:` 바깥으로 나감) → 설정 추가할 때마다 들여쓰기 확인.
+  - **`switch`는 `null`이 들어오면 `default`로 가지 않고 NPE**. nullable 값(`consumeType` 등)은 `if (x != null)` 안에서만 `switch`.
 - **springdoc 스펙의 알려진 한계 (TS 타입 생성 시 다룰 것)**: ① 응답 DTO(`ProductResponse` 등)는 `@NotNull` 같은 게 없어 `required` 목록이 비어서 전부 optional로 잡힘 → `openapi-typescript --properties-required-by-default`로 일괄 required 처리하되, 실제로 null일 수 있는 필드(`description`, `unitPrice`, `reversalOfId`, `canceledBy`, `canceledAt`, `consumeType` 등)는 타입에서 `| null`로 보정 필요. 백엔드에서 풀려면 non-null 필드마다 `@Schema(requiredMode = REQUIRED)`를 붙여야 해서 비용이 큼. ② `ResponseEntity`의 상태 코드는 springdoc이 몰라서 POST(201)/DELETE(204)도 스펙엔 200으로만 나옴 → 필요하면 `@Operation(responses = @ApiResponse(responseCode = "201"))`로 문서화. ③ 에러 응답(400/409 등)은 미문서화인데 공통 포맷(`ErrorResponse`) 하나라 프론트에서 타입 하나로 처리 가능.
 
 ---
@@ -177,23 +210,29 @@ main - dev - feature/*
 
 **중요 — 예시 코드 주는 방식**: 처음엔 "예시"라면서 완성된 실행 가능 코드를 통째로 줬는데, 이러면 그냥 복사·붙여넣기가 되어버려서 학습 효과가 없다는 피드백을 받음 (2026-09-23). 그 이후로는 **메서드 시그니처 + 주석 힌트만 주고 실제 구현 로직은 직접 채우게 하는 방식**으로 전환함 (예: `CategoryController`의 POST/PUT/DELETE는 시그니처와 힌트만 주고 본문은 직접 작성하게 함). 새 세션에서도 이 방식 유지할 것 — 완성 코드를 바로 주지 말고 뼈대만.
 
+**챗봇 단계에서 정착한 방식 (2026-10-08)**:
+- 수정할 곳은 **"지금 코드 → 바꾼 코드"를 실제 줄 그대로** 보여주고, 클래스마다 **라이브러리(import만)인지 새로 만드는 파일인지** 표시. "파라미터 추가" 같은 추상적인 설명만으로는 막힘 (`SearchRequest`, `ToolContext`를 새로 만들어야 하는지 헷갈렸던 경험).
+- 막히면 **이미 직접 작성한 비슷한 코드를 예시로** 씀 (예: `searchManual`은 `searchProducts`와 나란히 비교, 컨트롤러는 `ProductController` 줄 번호로 대응). 새 알고리즘(청킹)은 **같은 알고리즘의 다른 예시**(일기 자르기)를 실행해서 보여주고 직접 옮기게 함.
+- 라이브러리 API는 추측하지 않고 jar(`javap`, 설정 메타데이터)와 임시 실험 코드로 확인한 뒤 알려줌.
+- 분담: tool 메서드·청킹·바구니 전달 흐름 등 핵심은 직접 작성, 결과 record·포맷 유틸·설정 클래스·yaml·시스템 프롬프트 문장·매뉴얼 문서는 요청 시 Claude가 작성.
+
 ---
 
 ## 5. 다음 단계
 
-백엔드 `dev`는 PR #15까지, 프론트엔드 `dev`는 PR #11까지 merge 완료. **작업순서 1~6단계(백엔드 코어 + 프론트엔드) 전부 완료.**
+백엔드 `dev`는 PR #19까지, 프론트엔드 `dev`는 PR #11까지 merge 완료. **작업순서 1~6단계 완료, 7단계(챗봇)는 백엔드까지 완료.**
 
-### 5.1 다음 목표 — 작업순서 7단계: 챗봇
-1. **챗봇 명세서 작성** (`문서/` 폴더, 다른 설계서와 같은 형식) — 코드보다 먼저
-   - 라우팅 구조: 질문을 DB 조회(정형 데이터)로 보낼지, 매뉴얼 RAG(pgvector)로 보낼지
-   - Gemini function calling에 노출할 tool 목록 — 기존 Service 메서드 재사용이 전제(패키지구조설계서 2.5, 레포구성 1장: 챗봇은 같은 Spring 서버, HTTP 왕복 없이 Service 직접 호출)
-   - 권한: tool 실행도 로그인 사용자 role 기준(ADMIN 전용 기능을 챗봇으로 우회하지 않게)
-   - 기술 선택: Spring AI vs LangChain4j, `manual_embeddings`(vector 768) 차원과 임베딩 모델
-2. 백엔드 `feature/chatbot-routing` 구현
-3. 프론트 오른쪽 챗봇 패널(`components/layout/chat-panel.tsx`, 현재 자리만 있음)에 대화 UI 연결
+### 5.1 다음 목표 — 작업순서 7단계 마무리: 프론트 챗봇 패널
+- `inventory-frontend`의 오른쪽 챗봇 패널(`components/layout/chat-panel.tsx`, 현재 자리만 있음)에 `POST /api/chat` 연결 — 프론트 작업 대화에서 진행
+- API 규격(요청 `message`/`history`, 응답 `answer`/`sources`, 에러 429·503)은 챗봇 명세서 6장
+- 화면에서 정할 것: 대화 상태는 컴포넌트 상태(서버 저장 안 함), 로딩 표시(보통 2~5초, 최악 약 60초 후 503), `sources`는 "관련 매뉴얼"로 표시(실제 사용 출처가 아님), 답변의 줄바꿈·마크다운(`**굵게**`) 처리
+- 마크다운을 화면에서 그리지 않기로 하면 백엔드 시스템 프롬프트(`ChatService.SYSTEM_PROMPT`)에 "마크다운 서식 쓰지 않기" 규칙 추가 필요
 
-### 5.2 백로그 (프론트엔드 작업 중 발견, 우선순위 낮음)
-- **409 메시지를 사용자용 문구로 정리** — 상품 id·단위 없는 숫자가 섞여 있음. 예: 롤백 `"재고 수량이 부족합니다: 9 (복구 수량: 2000, 재고 수량: 1300)"`, `"ADUSTMENT 거래내역은…"`(오타 포함), `"이미 취소된 거래내역입니다: 12"`. 명세서 1장 원칙: `message`는 그대로 사용자에게 보여줄 문구. 챗봇도 같은 메시지를 쓰게 되므로 7단계 전에 정리하면 좋음
+### 5.2 챗봇 백로그
+챗봇 명세서 8장 "백로그"에 정리 (집계 tool, 스트리밍, 질문 전체 시간 제한, `usedTools`, 실제 사용 조각만 `sources`로, `RETRIEVAL_QUERY` 임베딩 등).
+
+### 5.3 백로그 (프론트엔드 작업 중 발견, 우선순위 낮음)
+- **409 메시지를 사용자용 문구로 정리** — 상품 id·단위 없는 숫자가 섞여 있음. 예: 롤백 `"재고 수량이 부족합니다: 9 (복구 수량: 2000, 재고 수량: 1300)"`, `"ADUSTMENT 거래내역은…"`(오타 포함), `"이미 취소된 거래내역입니다: 12"`. 명세서 1장 원칙: `message`는 그대로 사용자에게 보여줄 문구. (챗봇이 조회 전용으로 정해져서 409를 만날 일이 없어 **챗봇 선행 조건은 아니게 됨** — 화면 문구 문제로만 남음)
 - `ProductCreateRequest`/`ProductUpdateRequest.minStockLevel`에 `@PositiveOrZero` (프론트 zod가 막고 있지만 백엔드에도 필요)
 - SKU 동시 등록 시 `existsBySku` 통과 후 UNIQUE 위반 → `DataIntegrityViolationException`이 catch-all 500 → 전용 409 핸들러
 - `ConflictException` 코드를 `"CONFLICT"` 대신 구체화(예: `DUPLICATE_SKU`) — 프론트가 `error.code`로 필드별 에러 위치를 잡을 수 있게
