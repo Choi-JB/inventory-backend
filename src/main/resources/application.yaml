@@ -16,6 +16,7 @@ spring:
       genai:
         chat:
           model: models/gemini-3.1-flash-lite
+          thinking-level: LOW
         embedding:
           text:
             model: gemini-embedding-001
