@@ -3,6 +3,7 @@ package com.example.inventory.service;
 import org.springframework.stereotype.Service;
 import org.springframework.ai.chat.client.ChatClient;
 import com.example.inventory.tool.InventoryQueryTools;
+import com.example.inventory.tool.ManualSearchTools;
 import com.google.genai.errors.ApiException;
 import com.google.genai.errors.GenAiIOException;
 import com.example.inventory.exception.ChatRateLimitedException;
@@ -27,6 +28,7 @@ public class ChatService {
         - 카테고리별 상품 조회
         - 입고·출고·자체소비·재고조정 거래 이력 조회
         - 기간별 손익(매출, 판매 이익, 소비 손실, 최종 이익) 조회
+        - 시스템 사용 방법, 업무 절차·규칙, 역할별 권한 안내 (업무 매뉴얼 기준)
 
         ## 할 수 없는 일
         - 입고·출고·자체소비·재고조정 등록, 거래 롤백, 상품·카테고리 등록·수정·삭제 등 데이터를 바꾸는 작업
@@ -38,6 +40,15 @@ public class ChatService {
         - tool 결과의 수량과 금액은 표시된 그대로 쓴다. 단위를 바꾸거나 직접 계산하지 않는다.
         - 합계나 총량(예: 이번 달 총 출고량)은 직접 더하지 않는다. "합계는 제공하지 않습니다"라고 안내하고, 필요하면 건수(totalElements)만 알려준다.
         - 이익을 물으면 최종 이익(netProfit)으로 답한다.
+
+        ## 업무 매뉴얼 안내
+        - 사용 방법, 절차, 규칙, 권한을 묻는 질문은 반드시 searchManual 결과에 근거해 답한다.
+        - 검색된 매뉴얼에 없는 내용은 일반 상식이나 추측으로 보충하지 않는다.
+        - 매뉴얼에 없는 안내처(도움말, 고객센터, 문의처 등)를 만들어 내지 않는다. 다른 사람에게 요청하라고 안내할 때는 매뉴얼에 나온 대상(예: ADMIN)만 언급한다.
+        - 각 항목은 해당 매뉴얼 조각의 내용으로만 설명한다. 다른 조각의 표현을 섞지 않는다.
+        - 검색 결과가 없거나, 검색된 내용이 질문과 관련이 없으면 "매뉴얼에 없는 내용입니다"라고 답한다. 비슷해 보이는 다른 절차를 대신 안내하지 않는다.
+        - 절차는 필요한 단계를 순서대로 간결하게 쓴다. 이때는 1~2문장 제한을 따르지 않아도 된다.
+        - 데이터 조회와 절차 안내가 함께 필요한 질문은 두 종류의 tool을 모두 사용한다.
 
         ## 답변 작성
         - 사용자는 tool 결과를 볼 수 없다. "위와 같습니다", "아래를 참고하세요"처럼 tool 결과를 가리키지 말고, 필요한 내용을 답변에 직접 쓴다.
@@ -52,9 +63,9 @@ public class ChatService {
         - 손익처럼 기간이 필요한 질문에 기간이 없으면 기간을 되묻는다.
         """;
 
-    public ChatService(ChatClient.Builder builder, InventoryQueryTools inventoryQueryTools) {
+    public ChatService(ChatClient.Builder builder, InventoryQueryTools inventoryQueryTools, ManualSearchTools manualSearchTools) {
         this.chatClient = builder
-            .defaultTools(inventoryQueryTools)
+            .defaultTools(inventoryQueryTools, manualSearchTools)
             .build();
     }
 

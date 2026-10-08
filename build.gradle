@@ -42,6 +42,9 @@ dependencies {
 
 	implementation platform("org.springframework.ai:spring-ai-bom:2.0.0")
 	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+
+	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai-embedding'
+	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 }
 
 tasks.named('test') {
