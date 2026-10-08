@@ -36,3 +36,5 @@ chat:
   gemini:
     timeout-ms: 20000     # 호출 1번당 최대 대기 시간. 넘으면 포기하고 503(CHAT_UNAVAILABLE)
     retry-attempts: 1     # Google SDK 자동 재시도 횟수. 1 = 재시도 없음 (기본값은 5번, 약 30초)
+  manual:
+    similarity-threshold: 0.69  # 매뉴얼 검색 유사도 하한. 측정값: 있는 질문 0.72~0.76, 없는 질문 0.62~0.66
