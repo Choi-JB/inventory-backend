@@ -18,6 +18,9 @@ import java.util.List;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import com.example.inventory.dto.response.ChatResponse;     // 우리 DTO ⚠️ Spring AI의 ChatResponse 아님
+import com.example.inventory.tool.SourceCollector;           // 방금 만든 클래스
+import java.util.Map;                                        // 자바 기본
 import java.util.ArrayList;
 import java.util.Collections;
 
@@ -83,8 +86,9 @@ public class ChatService {
      * @param message 사용자 메시지
      * @return 채팅 응답
      */
-    public String chat(ChatRequest request) {
+    public ChatResponse chat(ChatRequest request) {
         List<Message> previous = toMessages(request.history());
+        SourceCollector sources = new SourceCollector();
 
         long start = System.currentTimeMillis();
         try{
@@ -92,10 +96,11 @@ public class ChatService {
                 .system(SYSTEM_PROMPT + "\n오늘 날짜: " + LocalDate.now(ZoneId.of("Asia/Seoul")))
                 .messages(previous)
                 .user(request.message())
+                .toolContext(Map.of(SourceCollector.KEY, sources)) 
                 .call()
                 .content();
             log.info("채팅 소요 시간: {}ms", System.currentTimeMillis()-start);
-            return response;
+            return new ChatResponse(response, sources.getSources());
         } catch (RuntimeException e) {
             ApiException apiException = findApiException(e);
             if (apiException == null) {
