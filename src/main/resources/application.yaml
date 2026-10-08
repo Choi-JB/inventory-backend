@@ -16,6 +16,17 @@ spring:
       genai:
         chat:
           model: models/gemini-3.1-flash-lite
+        embedding:
+          text:
+            model: gemini-embedding-001
+            dimensions: 768
+    vectorstore:
+        pgvector:
+          table-name: manual_embeddings
+          dimensions: 768
+          distance-type: COSINE_DISTANCE
+          index-type: HNSW
+          initialize-schema: false
 
 frontend:
   url: http://localhost:3000
