@@ -8,11 +8,13 @@ import java.time.LocalDateTime;
 import com.example.inventory.enums.ConsumeType;
 import com.example.inventory.enums.Unit;
 import com.example.inventory.entity.Product;
+import com.example.inventory.entity.User;
 
 public record StockTransactionResponse(
     Long id,
     Long productId,
-    Long userId,
+    //Long userId,
+    String userName,
     TransactionType type,
     TransactionStatus status,
     Integer quantity,
@@ -20,18 +22,23 @@ public record StockTransactionResponse(
     BigDecimal costPriceSnapshot,
     String reason,
     Long reversalOfId,
-    Long canceledBy,
+    //Long canceledBy,
+    String canceledByName,
     LocalDateTime canceledAt,
     LocalDateTime createdAt,
     ConsumeType consumeType,
     String productName,
     Unit productUnit
 ) {
-    public static StockTransactionResponse from(StockTransaction stockTransaction, Product product) {
+    public static StockTransactionResponse from(
+        StockTransaction stockTransaction, 
+        User user, 
+        User canceledByUser, 
+        Product product) {
         return new StockTransactionResponse(
             stockTransaction.getId(),
             stockTransaction.getProductId(),
-            stockTransaction.getUserId(),
+            user.getName(),
             stockTransaction.getType(),
             stockTransaction.getStatus(),
             stockTransaction.getQuantity(),
@@ -39,7 +46,8 @@ public record StockTransactionResponse(
             stockTransaction.getCostPriceSnapshot(),
             stockTransaction.getReason(),
             stockTransaction.getReversalOfId(),
-            stockTransaction.getCanceledBy(),
+            //stockTransaction.getCanceledBy(),
+            canceledByUser != null ? canceledByUser.getName() : null,
             stockTransaction.getCanceledAt(),
             stockTransaction.getCreatedAt(),
             stockTransaction.getConsumeType(),
