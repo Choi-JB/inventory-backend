@@ -26,7 +26,11 @@ public class AuthService {
 
     public LoginResponse loginWithGoogle(String googleId, String email) {
         User user = userRepository.findByGoogleId(googleId)
-                .orElseGet(() -> userRepository.save(new User(googleId, email, Role.STAFF)));
+                .orElseGet(() -> {  //로그인 시 유저가 없으면 새로 생성
+                    User createdUser = userRepository.save(new User(googleId, email, Role.STAFF));
+                    createdUser.assignDefaultUserName();
+                    return userRepository.save(createdUser);
+                });
 
         String accessToken = jwtProvider.generateToken(user);
 

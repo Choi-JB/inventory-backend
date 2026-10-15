@@ -12,7 +12,9 @@ import jakarta.transaction.Transactional;
 import com.example.inventory.exception.NotFoundException;
 import com.example.inventory.dto.request.RollbackRequest;
 import com.example.inventory.repository.ProductRepository;
+import com.example.inventory.repository.UserRepository;
 import com.example.inventory.entity.Product;
+import com.example.inventory.entity.User;
 import java.math.BigDecimal;
 import com.example.inventory.enums.TransactionType;
 import com.example.inventory.enums.TransactionStatus;
@@ -30,6 +32,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 import java.util.Set;
+import java.util.stream.Stream;
 import java.util.HashSet;
 import java.util.Comparator;
 
@@ -37,11 +40,13 @@ import java.util.Comparator;
 public class StockTransactionService {
     private final StockTransactionRepository stockTransactionRepository;
     private final ProductRepository productRepository;
+    private final UserRepository userRepository;
 
     public StockTransactionService(StockTransactionRepository stockTransactionRepository,
-            ProductRepository productRepository) {
+            ProductRepository productRepository, UserRepository userRepository) {
         this.stockTransactionRepository = stockTransactionRepository;
         this.productRepository = productRepository;
+        this.userRepository = userRepository;
     }
 
     /** 거래내역 조회 조건 설정 Specification */
@@ -118,6 +123,16 @@ public class StockTransactionService {
         Set<Long> productIds = stockTransactions.getContent().stream()
                 .map(st -> st.getProductId())
                 .collect(Collectors.toSet());
+        
+        Set<Long> userIds = stockTransactions.getContent().stream()
+                //.map(st -> st.getUserId())
+                .flatMap(st -> {
+                        if (st.getCanceledBy() != null) {
+                            return Stream.of(st.getUserId(), st.getCanceledBy());
+                        }
+                        return Stream.of(st.getUserId());
+                    })
+                .collect(Collectors.toSet());
 
         // 2단계: 그 id들의 상품을 쿼리 한 번으로 가져오기
         // "productId를 모아 상품을 한 번에 조회 (N+1 방지)"
@@ -128,17 +143,34 @@ public class StockTransactionService {
                         product -> product // 값: 상품 자체
                 ));
 
+        Map<Long, User> userMap = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(
+                        User::getId,
+                        user -> user
+                ));
+
         // 4단계: 각 거래마다 Map에서 자기 상품을 꺼내 from(거래, 상품)에 넘기기
-        return stockTransactions.map(tx -> StockTransactionResponse.from(tx, productMap.get(tx.getProductId())));
+        return stockTransactions.map(tx -> StockTransactionResponse.from(
+                tx, 
+                userMap.get(tx.getUserId()), 
+                tx.getCanceledBy() == null ? null : userMap.get(tx.getCanceledBy()),
+                productMap.get(tx.getProductId())));
     }
 
     // 거래내역 조회 (내역 id로 조회)
     public StockTransactionResponse searchById(Long id) {
         StockTransaction stockTransaction = stockTransactionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("거래내역을 찾을 수 없습니다: " + id));
+        User user = userRepository.findById(stockTransaction.getUserId())
+                .orElseThrow();
+        User canceledUser = null;
+        if(stockTransaction.getCanceledBy() != null){
+            canceledUser = userRepository.findById(stockTransaction.getCanceledBy())
+                    .orElse(null);
+        }
         Product product = productRepository.findById(stockTransaction.getProductId())
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + stockTransaction.getProductId()));
-        return StockTransactionResponse.from(stockTransaction, product);
+        return StockTransactionResponse.from(stockTransaction, user, canceledUser, product);
     }
 
     // 재고 입고
@@ -147,6 +179,8 @@ public class StockTransactionService {
             String reason) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
         // 상품 재고 증가
         product.increaseStock(quantity, unitPrice);
@@ -157,7 +191,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 입고 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction, product);
+        return StockTransactionResponse.from(stockTransaction, user, null, product);
     }
 
     // 재고 출고
@@ -166,6 +200,8 @@ public class StockTransactionService {
             String reason) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
         // 단가 설정 안된 경우 판매가격 사용
         if (unitPrice == null) {
@@ -181,7 +217,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 출고 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction, product);
+        return StockTransactionResponse.from(stockTransaction, user, null, product);
 
     }
 
@@ -191,6 +227,8 @@ public class StockTransactionService {
             ConsumeType consumeType) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
         // 상품 재고 감소
         product.decreaseStock(quantity);
@@ -201,7 +239,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 소비 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction, product);
+        return StockTransactionResponse.from(stockTransaction, user, null, product);
     }
 
     // 재고 조정
@@ -210,6 +248,8 @@ public class StockTransactionService {
             String reason) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
         // 기존 재고 수량 저장
         Integer oldStock = product.getCurrentStock();
@@ -223,7 +263,7 @@ public class StockTransactionService {
         stockTransactionRepository.save(stockTransaction);
 
         // 재고 조정 거래 내역 반환
-        return StockTransactionResponse.from(stockTransaction, product);
+        return StockTransactionResponse.from(stockTransaction, user, null, product);
     }
 
     /**
@@ -282,7 +322,11 @@ public class StockTransactionService {
         stockTransaction.cancel(userId);
         stockTransactionRepository.save(stockTransaction);
 
-        return StockTransactionResponse.from(reversalStockTransaction, product);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
+        User canceledByUser = userRepository.findById(stockTransaction.getCanceledBy()).orElse(null);
+
+        return StockTransactionResponse.from(reversalStockTransaction, user, canceledByUser, product);
     }
 
     // 수익/손실 조회

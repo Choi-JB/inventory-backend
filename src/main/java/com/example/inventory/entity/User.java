@@ -34,6 +34,9 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "name")
+    private String name;
+
     public User(String googleId, String email, Role role) {
         this.googleId = googleId;
         this.email = email;
@@ -44,4 +47,10 @@ public class User {
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
     }
+
+    //이름 자동 생성
+    public void assignDefaultUserName() {
+        this.name = this.role.name() + "-" + this.id; // STAFF-12
+    }
 }
+    
