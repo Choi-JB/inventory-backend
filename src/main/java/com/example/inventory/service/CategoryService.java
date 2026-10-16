@@ -13,6 +13,8 @@ import com.example.inventory.exception.DeleteConflictException;
 import com.example.inventory.exception.NotFoundException;
 import com.example.inventory.repository.CategoryRepository;
 import com.example.inventory.repository.ProductRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class CategoryService {
+
+    private static final Logger log = LoggerFactory.getLogger(CategoryService.class);
 
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
@@ -69,7 +73,9 @@ public class CategoryService {
         }
 
         Category category = new Category(request.name(), request.description(), request.parentId());
-        return CategoryResponse.from(categoryRepository.save(category));
+        Category saved = categoryRepository.save(category);
+        log.info("카테고리 생성: id={}, name={}, parentId={}", saved.getId(), saved.getName(), saved.getParentId());
+        return CategoryResponse.from(saved);
     }
 
     //수정
@@ -98,6 +104,7 @@ public class CategoryService {
         }
 
         categoryRepository.delete(category);
+        log.info("카테고리 삭제: id={}, name={}", id, category.getName());
     }
 
     // 카테고리 존재 확인

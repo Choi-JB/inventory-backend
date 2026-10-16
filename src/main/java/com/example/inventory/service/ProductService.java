@@ -21,9 +21,13 @@ import com.example.inventory.dto.request.ProductUpdateRequest;
 import com.example.inventory.exception.NotFoundException;
 import com.example.inventory.exception.DeleteConflictException;
 import com.example.inventory.exception.ConflictException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class ProductService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProductService.class);
 
     private final ProductRepository productRepository;
 
@@ -100,7 +104,10 @@ public class ProductService {
         }
 
         Product product = new Product(request.name(), request.sku(), request.categoryId(), request.unit(), request.sellingPrice(), request.minStockLevel());
-        return ProductResponse.from(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        log.info("상품 생성: id={}, sku={}, name={}, categoryId={}",
+                saved.getId(), saved.getSku(), saved.getName(), saved.getCategoryId());
+        return ProductResponse.from(saved);
     }
 
     //상품 수정
@@ -128,5 +135,6 @@ public class ProductService {
         }
 
         productRepository.delete(product);
+        log.info("상품 삭제: id={}, sku={}, name={}", id, product.getSku(), product.getName());
     }
 }

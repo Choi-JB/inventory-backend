@@ -11,10 +11,14 @@ import com.example.inventory.entity.User;
 import com.example.inventory.enums.Role;
 import com.example.inventory.repository.UserRepository;
 import com.example.inventory.security.JwtProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
     private final JwtProvider jwtProvider;
@@ -29,10 +33,13 @@ public class AuthService {
                 .orElseGet(() -> {  //로그인 시 유저가 없으면 새로 생성
                     User createdUser = userRepository.save(new User(googleId, email, Role.STAFF));
                     createdUser.assignDefaultUserName();
-                    return userRepository.save(createdUser);
+                    User saved = userRepository.save(createdUser);
+                    log.info("신규 사용자 가입: userId={}, name={}, email={}", saved.getId(), saved.getName(), email);
+                    return saved;
                 });
 
         String accessToken = jwtProvider.generateToken(user);
+        log.info("Google 로그인 성공: userId={}, name={}, role={}", user.getId(), user.getName(), user.getRole());
 
         return new LoginResponse(
                 accessToken,

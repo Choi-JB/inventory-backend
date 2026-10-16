@@ -35,9 +35,13 @@ import java.util.Set;
 import java.util.stream.Stream;
 import java.util.HashSet;
 import java.util.Comparator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class StockTransactionService {
+    private static final Logger log = LoggerFactory.getLogger(StockTransactionService.class);
+
     private final StockTransactionRepository stockTransactionRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
@@ -190,6 +194,9 @@ public class StockTransactionService {
                 product.getCostPrice(), reason, TransactionType.IN, TransactionStatus.ACTIVE, null, null);
         stockTransactionRepository.save(stockTransaction);
 
+        log.info("재고 입고: productId={}, userId={}, qty={}, unitPrice={}, stock={}",
+                productId, userId, quantity, unitPrice, product.getCurrentStock());
+
         // 재고 입고 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
     }
@@ -216,6 +223,9 @@ public class StockTransactionService {
                 product.getCostPrice(), reason, TransactionType.OUT, TransactionStatus.ACTIVE, null, null);
         stockTransactionRepository.save(stockTransaction);
 
+        log.info("재고 출고: productId={}, userId={}, qty={}, unitPrice={}, stock={}",
+                productId, userId, quantity, unitPrice, product.getCurrentStock());
+
         // 재고 출고 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
 
@@ -237,6 +247,9 @@ public class StockTransactionService {
         StockTransaction stockTransaction = new StockTransaction(productId, userId, quantity, null,
                 product.getCostPrice(), reason, TransactionType.CONSUME, TransactionStatus.ACTIVE, consumeType, null);
         stockTransactionRepository.save(stockTransaction);
+
+        log.info("재고 소비: productId={}, userId={}, qty={}, consumeType={}, stock={}",
+                productId, userId, quantity, consumeType, product.getCurrentStock());
 
         // 재고 소비 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
@@ -261,6 +274,9 @@ public class StockTransactionService {
         StockTransaction stockTransaction = new StockTransaction(productId, userId, quantity, null, null, reason,
                 TransactionType.ADJUSTMENT, TransactionStatus.ACTIVE, null, null);
         stockTransactionRepository.save(stockTransaction);
+
+        log.info("재고 조정: productId={}, userId={}, actualQty={}, delta={}, stock={}",
+                productId, userId, actualQuantity, quantity, product.getCurrentStock());
 
         // 재고 조정 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
@@ -325,6 +341,10 @@ public class StockTransactionService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
         User canceledByUser = userRepository.findById(stockTransaction.getCanceledBy()).orElse(null);
+
+        log.info("재고 롤백: originalTxId={}, type={}, productId={}, qty={}, canceledBy={}, stock={}",
+                transactionId, stockTransaction.getType(), stockTransaction.getProductId(),
+                stockTransaction.getQuantity(), userId, product.getCurrentStock());
 
         return StockTransactionResponse.from(reversalStockTransaction, user, canceledByUser, product);
     }
@@ -407,6 +427,9 @@ public class StockTransactionService {
                         // net이 같을경우 보조 기준 : (상품 id)으로 오름차순
                         .thenComparing(ProfitLossResponse.ByProduct::productId))
                 .toList();
+
+        log.info("손익 조회: start={}, end={}, productId={}, revenue={}, cost={}, profit={}, consumeLoss={}, netProfit={}",
+                startDate, endDate, productId, totalRevenue, totalCost, totalProfit, consumeLoss, netProfit);
 
         return new ProfitLossResponse(totalRevenue, totalCost, totalProfit, consumeLoss, netProfit, byProduct);
     }
