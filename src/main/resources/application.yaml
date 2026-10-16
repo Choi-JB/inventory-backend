@@ -32,6 +32,11 @@ spring:
 frontend:
   url: http://localhost:3000
 
+#logging
+logging:
+  file:
+    name: logs/application.log
+
 # Gemini 호출 설정 (config/ChatConfig에서 사용)
 chat:
   gemini:
