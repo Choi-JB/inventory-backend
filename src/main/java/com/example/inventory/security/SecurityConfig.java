@@ -14,6 +14,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -56,9 +58,9 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())   // CSRF 보호 비활성화(세션 방식에서 의미 있음)
             .sessionManagement(session ->   // 세션 관리 설정
                 session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
-            .securityContext(securityContext -> securityContext   // 보안 컨텍스트 설정
-                .securityContextRepository(new RequestAttributeSecurityContextRepository())
-            )
+            // .securityContext(securityContext -> securityContext   // 보안 컨텍스트 설정 : 쓰면 jwt 토큰 인식 못함
+            //     .securityContextRepository(new RequestAttributeSecurityContextRepository())
+            // )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/me").authenticated() // /api/auth/me 경로는 인증 필요
                 .requestMatchers("/api/auth/**").permitAll()   // 인증 없이 접근 가능한 경로
@@ -97,6 +99,5 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-
 
 }

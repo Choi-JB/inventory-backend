@@ -59,7 +59,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {//요청당 �
         String token = resolveToken(request);
 
         //검증 통과한 경우에만 SecurityContextHolder에 인증 객체를 넣음
-        if (token != null && jwtProvider.validateToken(token)) {
+        if (token != null && jwtProvider.validateAccessToken(token)) {
             Claims claims = jwtProvider.getClaims(token);
 
             String userId = claims.getSubject();
