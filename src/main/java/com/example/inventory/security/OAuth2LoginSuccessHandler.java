@@ -8,7 +8,6 @@ package com.example.inventory.security;
 
 import com.example.inventory.dto.response.LoginResponse;
 import com.example.inventory.service.AuthService;
-import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -17,8 +16,8 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -27,19 +26,21 @@ import java.time.Duration;
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler{
 
     private final AuthService authService;
-    private final ObjectMapper objectMapper;
+
+    //JWT 만료시간
     @Value("${jwt.expiration}")
     private long expirationMs;
+    //리프레시 토큰 만료시간
+    @Value("${jwt.refreshExpirationMs}")
+    private long refreshExpirationMs;
 
     @Value("${frontend.url}")
     private String frontendUrl;
 
     public OAuth2LoginSuccessHandler(
-            AuthService authService,
-            ObjectMapper objectMapper
+            AuthService authService
     ) {
         this.authService = authService;
-        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -61,15 +62,17 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler{
         //response.setStatus(HttpServletResponse.SC_OK);
         //response.setContentType("application/json;charset=UTF-8");
         //response.getWriter().write(objectMapper.writeValueAsString(loginResponse));
+        
+        response.addHeader(HttpHeaders.SET_COOKIE, AuthCookieUtils.accessTokenCookie(loginResponse.accessToken(), Duration.ofMillis(expirationMs)).toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, AuthCookieUtils.refreshTokenCookie(loginResponse.refreshToken(), Duration.ofMillis(refreshExpirationMs)).toString());
 
-        ResponseCookie cookie = ResponseCookie.from("accessToken", loginResponse.accessToken())
-            .httpOnly(true)
-            .secure(false)  //https 아닐 때 사용, 배포 때는 ture
-            .sameSite("Lax") //cross-site 쿠키 전송 허용, 배포 때는 None
-            .path("/")
-            .maxAge(Duration.ofMillis(expirationMs))
-            .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        // 쿠키 set 한 다음, redirect 전에:
+        var session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
+        SecurityContextHolder.clearContext();
+
         response.sendRedirect(frontendUrl);
     }
 }

@@ -10,4 +10,5 @@ public class SecurityUtils {
         String userIdStr = SecurityContextHolder.getContext().getAuthentication().getName();
         return Long.valueOf(userIdStr);
     }
+    
 }

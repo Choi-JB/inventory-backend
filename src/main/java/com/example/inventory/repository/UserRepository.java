@@ -7,4 +7,7 @@ import java.util.Optional;
 // JpaRepository<User, Long>만 상속하면 save, findById, findAll 등이 기본 제공
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByGoogleId(String googleId);
+
+    Optional<User> findByEmail(String email);
+    
 }
