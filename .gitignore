@@ -36,5 +36,8 @@ out/
 ### VS Code ###
 .vscode/
 
+### logs ###
+logs/
 
 application-local.yaml
+application-prod.yaml

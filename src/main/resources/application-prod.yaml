@@ -1,0 +1,46 @@
+# application-prod.yaml — 운영 프로필 (gitignore, 배포 jar 에 포함되지 않음)
+# 쿠키 Secure, 프록시 헤더, 스웨거 비활성의 배포 원본은 application.yaml 의 prod 문서다.
+# 이 파일은 로컬에서 prod 프로필로 띄울 때만 그 값을 같은 내용으로 덮어쓴다.
+# 비밀값은 이 파일에 두지 말고 호스팅 환경변수로 주입:
+#   SPRING_PROFILES_ACTIVE=prod
+#   SPRING_DATASOURCE_URL / USERNAME / PASSWORD
+#   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID
+#   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET
+#   SPRING_AI_GOOGLE_GENAI_API_KEY
+#   JWT_SECRET  (또는 jwt.secret)
+#   FRONTEND_URL (또는 frontend.url)  — 예: https://your-frontend.example.com
+spring:
+  jpa:
+    properties:
+      hibernate:
+        format_sql: false
+    show-sql: false
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            redirect-uri: "{baseUrl}/api/auth/google/callback"
+            scope:
+              - email
+              - profile
+
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: lax
+
+app:
+  cookie:
+    secure: true
+    same-site: Lax
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

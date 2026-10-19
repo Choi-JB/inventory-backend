@@ -1,13 +1,105 @@
-# application.yaml
+# application.yaml — 공통(비비밀) 설정
+# 로컬: profiles.active=local (기본)
+# 배포: SPRING_PROFILES_ACTIVE=prod 로 덮어쓰기
 spring:
   application:
-    name: inventory
+    name: inventory-api
   profiles:
     active: local
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            redirect-uri: "{baseUrl}/api/auth/google/callback"
+            scope:
+              - email
+              - profile
   jpa:
     hibernate:
       ddl-auto: validate
     properties:
       hibernate:
-        format_sql: true
-    show-sql: true
+        format_sql: false
+    show-sql: false
+  ai:
+    google:
+      genai:
+        chat:
+          model: models/gemini-3.1-flash-lite
+          thinking-level: LOW
+        embedding:
+          text:
+            model: gemini-embedding-001
+            dimensions: 768
+    vectorstore:
+      pgvector:
+        table-name: manual_embeddings
+        dimensions: 768
+        distance-type: COSINE_DISTANCE
+        index-type: HNSW
+        initialize-schema: false
+
+# 배포 시 FRONTEND_URL 로 덮어쓰기. CORS 허용 출처와 구글 로그인 후 이동 주소.
+frontend:
+  url: http://localhost:3000
+
+# HttpOnly 는 코드에서 항상 true. Secure/SameSite 만 여기서 정한다.
+# 로컬 HTTP 기본값. prod 프로필 문서에서 Secure 를 켠다.
+app:
+  cookie:
+    secure: false
+    same-site: Lax
+
+# 비밀이 아닌 JWT 만료시간 (secret 은 프로필/환경변수)
+jwt:
+  expiration: 1800000          # 30분(ms)
+  refreshExpirationMs: 32400000  # 9시간(ms)
+
+# Gemini 호출 설정 (config/ChatConfig에서 사용)
+chat:
+  gemini:
+    timeout-ms: 20000     # 호출 1번당 최대 대기 시간. 넘으면 포기하고 503(CHAT_UNAVAILABLE)
+    retry-attempts: 1     # Google SDK 자동 재시도 횟수. 1 = 재시도 없음 (기본값은 5번, 약 30초)
+  manual:
+    similarity-threshold: 0.69  # 매뉴얼 검색 유사도 하한. 측정값: 있는 질문 0.72~0.76, 없는 질문 0.62~0.66
+
+# 로컬 개발용. prod 프로필 문서에서 끈다.
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+---
+# prod 프로필 (SPRING_PROFILES_ACTIVE=prod 가 application.yaml 의 active: local 을 덮어씀)
+# application-prod.yaml 은 gitignore 라 배포 jar 에 없다. 운영에서 켜져야 하는 비비밀 값은 여기 둔다.
+# 프론트 주소는 환경변수 FRONTEND_URL.
+# same-site: 프론트와 API 가 같은 사이트(app.example.com / api.example.com)이면 Lax.
+# 등록 도메인이 다르면 None. None 은 Secure=true 가 필수라 로컬 HTTP 에서는 쓸 수 없다.
+spring:
+  config:
+    activate:
+      on-profile: prod
+  jpa:
+    properties:
+      hibernate:
+        format_sql: false
+    show-sql: false
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: lax
+app:
+  cookie:
+    secure: true
+    same-site: Lax
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
