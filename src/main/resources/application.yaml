@@ -1,11 +1,15 @@
 # application.yaml — 공통(비비밀) 설정
 # 로컬: profiles.active=local (기본)
 # 배포: SPRING_PROFILES_ACTIVE=prod 로 덮어쓰기
+# Render 는 PORT 를 넘긴다. 로컬에는 이 변수가 없어서 8080.
+server:
+  port: ${PORT:8080}
+
 spring:
   application:
     name: inventory-api
   profiles:
-    active: local
+    active: prod
   security:
     oauth2:
       client:
@@ -42,7 +46,7 @@ spring:
 
 # 배포 시 FRONTEND_URL 로 덮어쓰기. CORS 허용 출처와 구글 로그인 후 이동 주소.
 frontend:
-  url: http://localhost:3000
+  url: https://inventory-frontend-ten-eta.vercel.app
 
 # HttpOnly 는 코드에서 항상 true. Secure/SameSite 만 여기서 정한다.
 # 로컬 HTTP 기본값. prod 프로필 문서에서 Secure 를 켠다.

@@ -1,0 +1,15 @@
+.git
+.github
+.gradle
+.idea
+.vscode
+build
+out
+logs
+bin
+*.md
+.env
+.env.*
+application-local.yaml
+application-prod.yaml
+src/test

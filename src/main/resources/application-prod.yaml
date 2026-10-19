@@ -1,14 +1,16 @@
-# application-prod.yaml — 운영 프로필 (gitignore, 배포 jar 에 포함되지 않음)
-# 쿠키 Secure, 프록시 헤더, 스웨거 비활성의 배포 원본은 application.yaml 의 prod 문서다.
-# 이 파일은 로컬에서 prod 프로필로 띄울 때만 그 값을 같은 내용으로 덮어쓴다.
-# 비밀값은 이 파일에 두지 말고 호스팅 환경변수로 주입:
+# application-prod.yaml — 임시 운영 프로필 (gitignore, 배포 jar 에 포함되지 않음)
+# 프론트 https://inventory-frontend-ten-eta.vercel.app 와 API 호스트가 다른 사이트일 때 사용.
+# access/refresh 쿠키는 SameSite=None + Secure=true 여야 Vercel 페이지의 fetch 에 실림.
+# 로컬 HTTP(profile=local)에서는 None 을 쓸 수 없다.
+# 비밀값은 이 파일에 두지 말고 환경변수로 주입:
 #   SPRING_PROFILES_ACTIVE=prod
 #   SPRING_DATASOURCE_URL / USERNAME / PASSWORD
 #   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID
 #   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET
 #   SPRING_AI_GOOGLE_GENAI_API_KEY
-#   JWT_SECRET  (또는 jwt.secret)
-#   FRONTEND_URL (또는 frontend.url)  — 예: https://your-frontend.example.com
+#   SPRING_AI_GOOGLE_GENAI_EMBEDDING_API_KEY
+#   JWT_SECRET
+#   FRONTEND_URL=https://inventory-frontend-ten-eta.vercel.app
 spring:
   jpa:
     properties:
@@ -34,10 +36,13 @@ server:
         secure: true
         same-site: lax
 
+frontend:
+  url: https://inventory-frontend-ten-eta.vercel.app
+
 app:
   cookie:
     secure: true
-    same-site: Lax
+    same-site: None
 
 springdoc:
   api-docs:
