@@ -26,6 +26,7 @@ import java.time.Duration;
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler{
 
     private final AuthService authService;
+    private final AuthCookieUtils authCookieUtils;
 
     //JWT 만료시간
     @Value("${jwt.expiration}")
@@ -38,9 +39,11 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler{
     private String frontendUrl;
 
     public OAuth2LoginSuccessHandler(
-            AuthService authService
+            AuthService authService,
+            AuthCookieUtils authCookieUtils
     ) {
         this.authService = authService;
+        this.authCookieUtils = authCookieUtils;
     }
 
     @Override
@@ -63,8 +66,8 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler{
         //response.setContentType("application/json;charset=UTF-8");
         //response.getWriter().write(objectMapper.writeValueAsString(loginResponse));
         
-        response.addHeader(HttpHeaders.SET_COOKIE, AuthCookieUtils.accessTokenCookie(loginResponse.accessToken(), Duration.ofMillis(expirationMs)).toString());
-        response.addHeader(HttpHeaders.SET_COOKIE, AuthCookieUtils.refreshTokenCookie(loginResponse.refreshToken(), Duration.ofMillis(refreshExpirationMs)).toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, authCookieUtils.accessTokenCookie(loginResponse.accessToken(), Duration.ofMillis(expirationMs)).toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, authCookieUtils.refreshTokenCookie(loginResponse.refreshToken(), Duration.ofMillis(refreshExpirationMs)).toString());
 
         // 쿠키 set 한 다음, redirect 전에:
         var session = request.getSession(false);

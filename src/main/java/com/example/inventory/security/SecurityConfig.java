@@ -6,6 +6,7 @@
  */
 package com.example.inventory.security;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -31,15 +32,18 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final ObjectMapper objectMapper;
+    private final String frontendUrl;
 
     public SecurityConfig(
         JwtAuthenticationFilter jwtAuthenticationFilter,
         OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        @Value("${frontend.url}") String frontendUrl
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.oAuth2LoginSuccessHandler = oAuth2LoginSuccessHandler;
         this.objectMapper = objectMapper;
+        this.frontendUrl = frontendUrl;
     }
 
     /**
@@ -87,7 +91,7 @@ public class SecurityConfig {
         // 여기서 CorsConfiguration 객체를 만들고 설정값(allowedOrigins 등)을 채운 다음
         // UrlBasedCorsConfigurationSource에 등록해서 반환하세요
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("http://localhost:3000"));
+        configuration.setAllowedOrigins(List.of(frontendUrl));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

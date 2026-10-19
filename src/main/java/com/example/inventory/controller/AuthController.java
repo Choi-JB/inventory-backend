@@ -42,10 +42,12 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final AuthService authService;
+    private final AuthCookieUtils authCookieUtils;
 
-    public AuthController(UserRepository userRepository, AuthService authService) {
+    public AuthController(UserRepository userRepository, AuthService authService, AuthCookieUtils authCookieUtils) {
         this.userRepository = userRepository;
         this.authService = authService;
+        this.authCookieUtils = authCookieUtils;
     }
 
     // GET /api/auth/me: SecurityContextHolder
@@ -70,8 +72,8 @@ public class AuthController {
             LoginResponse loginResponse = authService.login(loginRequest);
 
             return ResponseEntity.status(HttpStatus.OK)
-                    .header(HttpHeaders.SET_COOKIE, AuthCookieUtils.accessTokenCookie(loginResponse.accessToken(), Duration.ofMillis(expirationMs)).toString())
-                    .header(HttpHeaders.SET_COOKIE, AuthCookieUtils.refreshTokenCookie(loginResponse.refreshToken(), Duration.ofMillis(refreshExpirationMs)).toString())
+                    .header(HttpHeaders.SET_COOKIE, authCookieUtils.accessTokenCookie(loginResponse.accessToken(), Duration.ofMillis(expirationMs)).toString())
+                    .header(HttpHeaders.SET_COOKIE, authCookieUtils.refreshTokenCookie(loginResponse.refreshToken(), Duration.ofMillis(refreshExpirationMs)).toString())
                     .build();
     }
 
@@ -80,8 +82,8 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
 
-        response.addHeader(HttpHeaders.SET_COOKIE, AuthCookieUtils.clearAccessTokenCookie().toString());
-        response.addHeader(HttpHeaders.SET_COOKIE, AuthCookieUtils.clearRefreshTokenCookie().toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, authCookieUtils.clearAccessTokenCookie().toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, authCookieUtils.clearRefreshTokenCookie().toString());
 
         var session = request.getSession(false);
         if(session != null) {
@@ -105,7 +107,7 @@ public class AuthController {
     @Operation(summary = "토큰 갱신", description = "refreshToken을 사용하여 accessToken을 갱신합니다.")
     @PostMapping("/refresh")
     public ResponseEntity<Void> refresh(HttpServletRequest request) {
-            String refreshToken = AuthCookieUtils.getCookieValue(request, "refreshToken");
+            String refreshToken = authCookieUtils.getCookieValue(request, "refreshToken");
 
             if (refreshToken == null || refreshToken.isBlank()) {
                 throw new InvalidTokenException("유효하지 않은 토큰입니다.");
@@ -114,8 +116,8 @@ public class AuthController {
             LoginResponse loginResponse = authService.refresh(new RefreshRequest(refreshToken));
 
             return ResponseEntity.status(HttpStatus.OK)
-                    .header(HttpHeaders.SET_COOKIE, AuthCookieUtils.accessTokenCookie(loginResponse.accessToken(), Duration.ofMillis(expirationMs)).toString())
-                    .header(HttpHeaders.SET_COOKIE, AuthCookieUtils.refreshTokenCookie(loginResponse.refreshToken(), Duration.ofMillis(refreshExpirationMs)).toString())
+                    .header(HttpHeaders.SET_COOKIE, authCookieUtils.accessTokenCookie(loginResponse.accessToken(), Duration.ofMillis(expirationMs)).toString())
+                    .header(HttpHeaders.SET_COOKIE, authCookieUtils.refreshTokenCookie(loginResponse.refreshToken(), Duration.ofMillis(refreshExpirationMs)).toString())
                     .build();
     }
 }
