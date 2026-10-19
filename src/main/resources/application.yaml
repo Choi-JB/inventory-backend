@@ -6,6 +6,15 @@ spring:
     name: inventory-api
   profiles:
     active: local
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            redirect-uri: "{baseUrl}/api/auth/google/callback"
+            scope:
+              - email
+              - profile
   jpa:
     hibernate:
       ddl-auto: validate
@@ -31,9 +40,16 @@ spring:
         index-type: HNSW
         initialize-schema: false
 
-# 배포 시 FRONTEND_URL 또는 frontend.url 환경변수로 덮어쓰기
+# 배포 시 FRONTEND_URL 로 덮어쓰기. CORS 허용 출처와 구글 로그인 후 이동 주소.
 frontend:
   url: http://localhost:3000
+
+# HttpOnly 는 코드에서 항상 true. Secure/SameSite 만 여기서 정한다.
+# 로컬 HTTP 기본값. prod 프로필 문서에서 Secure 를 켠다.
+app:
+  cookie:
+    secure: false
+    same-site: Lax
 
 # 비밀이 아닌 JWT 만료시간 (secret 은 프로필/환경변수)
 jwt:
@@ -48,9 +64,42 @@ chat:
   manual:
     similarity-threshold: 0.69  # 매뉴얼 검색 유사도 하한. 측정값: 있는 질문 0.72~0.76, 없는 질문 0.62~0.66
 
-# 로컬 개발용. 운영(prod)에서는 application-prod.yaml 에서 false
+# 로컬 개발용. prod 프로필 문서에서 끈다.
 springdoc:
   api-docs:
     enabled: true
   swagger-ui:
     enabled: true
+
+---
+# prod 프로필 (SPRING_PROFILES_ACTIVE=prod 가 application.yaml 의 active: local 을 덮어씀)
+# application-prod.yaml 은 gitignore 라 배포 jar 에 없다. 운영에서 켜져야 하는 비비밀 값은 여기 둔다.
+# 프론트 주소는 환경변수 FRONTEND_URL.
+# same-site: 프론트와 API 가 같은 사이트(app.example.com / api.example.com)이면 Lax.
+# 등록 도메인이 다르면 None. None 은 Secure=true 가 필수라 로컬 HTTP 에서는 쓸 수 없다.
+spring:
+  config:
+    activate:
+      on-profile: prod
+  jpa:
+    properties:
+      hibernate:
+        format_sql: false
+    show-sql: false
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: lax
+app:
+  cookie:
+    secure: true
+    same-site: Lax
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

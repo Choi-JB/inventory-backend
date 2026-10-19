@@ -1,0 +1,33 @@
+# Render 환경변수 목록
+# application-local.yaml / application-prod.yaml 은 gitignore 라 GitHub·배포 jar 에 없다.
+# 아래 값만 Render Environment 에 입력한다. 실제 비밀값은 이 파일에 적지 않는다.
+# 이름 규칙: yaml 의 . 과 - 를 _ 로 바꾸고 대문자로 쓴다. (jwt.secret → JWT_SECRET)
+
+SPRING_PROFILES_ACTIVE=prod
+
+# spring.datasource.url / username / password
+SPRING_DATASOURCE_URL=
+SPRING_DATASOURCE_USERNAME=
+SPRING_DATASOURCE_PASSWORD=
+
+# spring.security.oauth2.client.registration.google.client-id / client-secret
+SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID=
+SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET=
+
+# spring.ai.google.genai.api-key
+SPRING_AI_GOOGLE_GENAI_API_KEY=
+# spring.ai.google.genai.embedding.api-key
+SPRING_AI_GOOGLE_GENAI_EMBEDDING_API_KEY=
+
+# jwt.secret
+JWT_SECRET=
+
+# frontend.url — CORS 허용 출처, 구글 로그인 후 이동 주소. 예: https://운영-프론트-주소
+FRONTEND_URL=
+
+# 아래는 application.yaml 에 이미 있어서 Render 에 다시 넣지 않는다.
+# - 쿠키 Secure / SameSite (prod 프로필에서 Secure=true, SameSite=Lax)
+# - 구글 콜백 경로 {baseUrl}/api/auth/google/callback 와 scope
+# - JWT 만료 시간 (access 30분, refresh 9시간)
+# - Swagger 비활성, 프록시 헤더(server.forward-headers-strategy)
+# - logging.file.name (로컬 로그 파일. Render 는 콘솔 로그를 쓰면 된다)
