@@ -284,7 +284,7 @@ class StockTransactionServiceTest {
     }
 
     private static User user(Long id, String name) {
-        User user = new User("google-" + id, id + "@test.com", Role.STAFF);
+        User user = User.google("google-" + id, id + "@test.com", Role.STAFF);
         ReflectionTestUtils.setField(user, "id", id);
         ReflectionTestUtils.setField(user, "name", name);
         return user;
