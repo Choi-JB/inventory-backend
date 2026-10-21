@@ -22,19 +22,23 @@ import com.example.inventory.enums.ConsumeType;
 import com.example.inventory.exception.RollbackConflictException;
 import com.example.inventory.exception.RollbackNotAllowedException;
 import com.example.inventory.exception.AlreadyCanceledException;
+import com.example.inventory.exception.IdempotencyConflictException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.time.LocalDateTime;
 import com.example.inventory.dto.response.ProfitLossResponse;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.stream.Collectors;
 import java.util.Set;
 import java.util.stream.Stream;
 import java.util.HashSet;
 import java.util.Comparator;
+import java.util.Objects;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,12 +49,15 @@ public class StockTransactionService {
     private final StockTransactionRepository stockTransactionRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public StockTransactionService(StockTransactionRepository stockTransactionRepository,
-            ProductRepository productRepository, UserRepository userRepository) {
+            ProductRepository productRepository, UserRepository userRepository,
+            TransactionTemplate transactionTemplate) {
         this.stockTransactionRepository = stockTransactionRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /** 거래내역 조회 조건 설정 Specification */
@@ -177,108 +184,169 @@ public class StockTransactionService {
         return StockTransactionResponse.from(stockTransaction, user, canceledUser, product);
     }
 
+    // 키가 없으면 null. 내용이 같으면 기존 거래, 다르면 409.
+    private StockTransactionResponse findMatching(String idempotencyKey, TransactionType type, Long productId,
+            Integer quantity, BigDecimal unitPrice, ConsumeType consumeType, String reason) {
+        return stockTransactionRepository.findByIdempotencyKey(idempotencyKey)
+                .map(tx -> {
+                    if (!sameRequest(tx, type, productId, quantity, unitPrice, consumeType, reason)) {
+                        throw new IdempotencyConflictException("같은 요청 키로 다른 내용의 거래가 이미 처리되었습니다.");
+                    }
+                    User user = userRepository.findById(tx.getUserId())
+                            .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
+                    Product product = productRepository.findById(tx.getProductId())
+                            .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + tx.getProductId()));
+                    return StockTransactionResponse.from(tx, user, null, product);
+                })
+                .orElse(null);
+    }
+
+    private boolean sameRequest(StockTransaction tx, TransactionType type, Long productId, Integer quantity,
+            BigDecimal unitPrice, ConsumeType consumeType, String reason) {
+        if (tx.getType() != type || !tx.getProductId().equals(productId) || !Objects.equals(tx.getReason(), reason)) {
+            return false;
+        }
+        return switch (type) {
+            case IN -> tx.getQuantity().equals(quantity) && sameMoney(tx.getUnitPrice(), unitPrice);
+            case OUT -> tx.getQuantity().equals(quantity)
+                    && (unitPrice == null || sameMoney(tx.getUnitPrice(), unitPrice));
+            case CONSUME -> tx.getQuantity().equals(quantity) && tx.getConsumeType() == consumeType;
+            case ADJUSTMENT -> true;
+        };
+    }
+
+    private boolean sameMoney(BigDecimal stored, BigDecimal requested) {
+        if (stored == null || requested == null) {
+            return stored == null && requested == null;
+        }
+        return stored.compareTo(requested) == 0;
+    }
+
+    // 저장 트랜잭션 밖에서 키를 다시 읽어야 유니크 제약 이후에도 조회가 된다.
+    private StockTransactionResponse executeIdempotent(String idempotencyKey, TransactionType type, Long productId,
+            Integer quantity, BigDecimal unitPrice, ConsumeType consumeType, String reason,
+            Supplier<StockTransactionResponse> write) {
+        StockTransactionResponse existing = findMatching(idempotencyKey, type, productId, quantity, unitPrice, consumeType, reason);
+        if (existing != null) {
+            return existing;
+        }
+        try {
+            return transactionTemplate.execute(status -> write.get());
+        } catch (DataIntegrityViolationException e) {
+            StockTransactionResponse saved = findMatching(idempotencyKey, type, productId, quantity, unitPrice, consumeType, reason);
+            if (saved != null) {
+                return saved;
+            }
+            throw e;
+        }
+    }
+
     // 재고 입고
-    @Transactional
     public StockTransactionResponse stockIn(Long productId, Long userId, Integer quantity, BigDecimal unitPrice,
-            String reason) {
+            String reason, String idempotencyKey) {
+        return executeIdempotent(idempotencyKey, TransactionType.IN, productId, quantity, unitPrice, null, reason,
+                () -> writeStockIn(productId, userId, quantity, unitPrice, reason, idempotencyKey));
+    }
+
+    private StockTransactionResponse writeStockIn(Long productId, Long userId, Integer quantity, BigDecimal unitPrice,
+            String reason, String idempotencyKey) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
-        // 상품 재고 증가
         product.increaseStock(quantity, unitPrice);
 
-        // 재고 입고 거래 생성
         StockTransaction stockTransaction = new StockTransaction(productId, userId, quantity, unitPrice,
-                product.getCostPrice(), reason, TransactionType.IN, TransactionStatus.ACTIVE, null, null);
+                product.getCostPrice(), reason, TransactionType.IN, TransactionStatus.ACTIVE, null, null, idempotencyKey);
         stockTransactionRepository.save(stockTransaction);
 
         log.info("재고 입고: productId={}, userId={}, qty={}, unitPrice={}, stock={}",
                 productId, userId, quantity, unitPrice, product.getCurrentStock());
 
-        // 재고 입고 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
     }
 
     // 재고 출고
-    @Transactional
     public StockTransactionResponse stockOut(Long productId, Long userId, Integer quantity, BigDecimal unitPrice,
-            String reason) {
+            String reason, String idempotencyKey) {
+        return executeIdempotent(idempotencyKey, TransactionType.OUT, productId, quantity, unitPrice, null, reason,
+                () -> writeStockOut(productId, userId, quantity, unitPrice, reason, idempotencyKey));
+    }
+
+    private StockTransactionResponse writeStockOut(Long productId, Long userId, Integer quantity, BigDecimal unitPrice,
+            String reason, String idempotencyKey) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
-        // 단가 설정 안된 경우 판매가격 사용
         if (unitPrice == null) {
             unitPrice = product.getSellingPrice();
         }
 
-        // 상품 재고 감소
         product.decreaseStock(quantity);
 
-        // 재고 출고 거래 생성
         StockTransaction stockTransaction = new StockTransaction(productId, userId, quantity, unitPrice,
-                product.getCostPrice(), reason, TransactionType.OUT, TransactionStatus.ACTIVE, null, null);
+                product.getCostPrice(), reason, TransactionType.OUT, TransactionStatus.ACTIVE, null, null, idempotencyKey);
         stockTransactionRepository.save(stockTransaction);
 
         log.info("재고 출고: productId={}, userId={}, qty={}, unitPrice={}, stock={}",
                 productId, userId, quantity, unitPrice, product.getCurrentStock());
 
-        // 재고 출고 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
-
     }
 
     // 재고 소비
-    @Transactional
     public StockTransactionResponse stockConsume(Long productId, Long userId, Integer quantity, String reason,
-            ConsumeType consumeType) {
+            ConsumeType consumeType, String idempotencyKey) {
+        return executeIdempotent(idempotencyKey, TransactionType.CONSUME, productId, quantity, null, consumeType, reason,
+                () -> writeStockConsume(productId, userId, quantity, reason, consumeType, idempotencyKey));
+    }
+
+    private StockTransactionResponse writeStockConsume(Long productId, Long userId, Integer quantity, String reason,
+            ConsumeType consumeType, String idempotencyKey) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
-        // 상품 재고 감소
         product.decreaseStock(quantity);
 
-        // 재고 소비 거래 생성
         StockTransaction stockTransaction = new StockTransaction(productId, userId, quantity, null,
-                product.getCostPrice(), reason, TransactionType.CONSUME, TransactionStatus.ACTIVE, consumeType, null);
+                product.getCostPrice(), reason, TransactionType.CONSUME, TransactionStatus.ACTIVE, consumeType, null, idempotencyKey);
         stockTransactionRepository.save(stockTransaction);
 
         log.info("재고 소비: productId={}, userId={}, qty={}, consumeType={}, stock={}",
                 productId, userId, quantity, consumeType, product.getCurrentStock());
 
-        // 재고 소비 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
     }
 
     // 재고 조정
-    @Transactional
     public StockTransactionResponse stockAdjustment(Long productId, Long userId, Integer actualQuantity,
-            String reason) {
+            String reason, String idempotencyKey) {
+        return executeIdempotent(idempotencyKey, TransactionType.ADJUSTMENT, productId, null, null, null, reason,
+                () -> writeStockAdjustment(productId, userId, actualQuantity, reason, idempotencyKey));
+    }
+
+    private StockTransactionResponse writeStockAdjustment(Long productId, Long userId, Integer actualQuantity,
+            String reason, String idempotencyKey) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("상품을 찾을 수 없습니다: " + productId));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("등록된 사용자가 아닙니다!"));
 
-        // 기존 재고 수량 저장
         Integer oldStock = product.getCurrentStock();
-        // 재고 조정
         product.adjustStock(actualQuantity);
-        // 조정 수량 계산
         Integer quantity = actualQuantity - oldStock;
-        // 재고 조정 거래 생성
         StockTransaction stockTransaction = new StockTransaction(productId, userId, quantity, null, null, reason,
-                TransactionType.ADJUSTMENT, TransactionStatus.ACTIVE, null, null);
+                TransactionType.ADJUSTMENT, TransactionStatus.ACTIVE, null, null, idempotencyKey);
         stockTransactionRepository.save(stockTransaction);
 
         log.info("재고 조정: productId={}, userId={}, actualQty={}, delta={}, stock={}",
                 productId, userId, actualQuantity, quantity, product.getCurrentStock());
 
-        // 재고 조정 거래 내역 반환
         return StockTransactionResponse.from(stockTransaction, user, null, product);
     }
 
@@ -331,7 +399,7 @@ public class StockTransactionService {
         // 3. 새로운 롤백 내역 생성
         StockTransaction reversalStockTransaction = new StockTransaction(stockTransaction.getProductId(), userId,
                 stockTransaction.getQuantity(), stockTransaction.getUnitPrice(), null, rollbackRequest.reason(),
-                stockTransaction.getType(), TransactionStatus.ACTIVE, null, stockTransaction.getId());
+                stockTransaction.getType(), TransactionStatus.ACTIVE, null, stockTransaction.getId(), null);
         stockTransactionRepository.save(reversalStockTransaction);
 
         // 4. 기존 거래내역 취소 처리

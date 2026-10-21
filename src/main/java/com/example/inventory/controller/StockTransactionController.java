@@ -52,7 +52,7 @@ public class StockTransactionController {
         Long userId = SecurityUtils.getCurrentUserId();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService.stockIn(request.productId(),
-                userId, request.quantity(), request.unitPrice(), request.reason()));
+                userId, request.quantity(), request.unitPrice(), request.reason(), request.idempotencyKey()));
     }
 
     // POST /api/stock/out [재고 출고]
@@ -63,7 +63,7 @@ public class StockTransactionController {
         Long userId = SecurityUtils.getCurrentUserId();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService.stockOut(request.productId(),
-                userId, request.quantity(), request.unitPrice(), request.reason()));
+                userId, request.quantity(), request.unitPrice(), request.reason(), request.idempotencyKey()));
     }
 
     // POST /api/stock/consume [재고 소비]
@@ -73,7 +73,7 @@ public class StockTransactionController {
     public ResponseEntity<StockTransactionResponse> stockConsume(@Valid @RequestBody StockConsumeRequest request) {
         Long userId = SecurityUtils.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService.stockConsume(request.productId(),
-                userId, request.quantity(), request.reason(), request.consumeType()));
+                userId, request.quantity(), request.reason(), request.consumeType(), request.idempotencyKey()));
     }
 
     // POST /api/stock/adjustment [재고 조정]
@@ -84,7 +84,7 @@ public class StockTransactionController {
             @Valid @RequestBody StockAdjustmentRequest request) {
         Long userId = SecurityUtils.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(stockTransactionService
-                .stockAdjustment(request.productId(), userId, request.actualQuantity(), request.reason()));
+                .stockAdjustment(request.productId(), userId, request.actualQuantity(), request.reason(), request.idempotencyKey()));
     }
 
     // POST /api/stock/transactions/{id}/rollback} [롤백] - ADMIN만 가능, 200 OK + 롤백된 거래내역

@@ -100,7 +100,7 @@ public class AuthController {
     public ResponseEntity<Void> signUp(
             @RequestBody @Valid SignUpRequest signUpRequest) {
         authService.signUp(signUpRequest);
-        return ResponseEntity.status(HttpStatus.OK).build();
+        return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
     // POST /api/auth/refresh
