@@ -31,3 +31,7 @@ FRONTEND_URL=
 # - JWT 만료 시간 (access 30분, refresh 9시간)
 # - Swagger 비활성, 프록시 헤더(server.forward-headers-strategy)
 # - logging.file.name (로컬 로그 파일. Render 는 콘솔 로그를 쓰면 된다)
+
+APP_COOKIE_SAME_SITE = None
+APP_COOKIE_SECURE = true
+
