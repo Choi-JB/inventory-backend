@@ -50,7 +50,7 @@ class StockOutAtomicityIntegrationTest extends IntegrationTestSupport {
                 .save(any(StockTransaction.class));
 
         assertThatThrownBy(() -> stockTransactionService.stockOut(
-                productId, userId, 4, new BigDecimal("5000"), "판매"))
+                productId, userId, 4, new BigDecimal("5000"), "판매", "idem-atom"))
                 .isInstanceOf(RuntimeException.class);
 
         Product reloaded = productRepository.findById(productId).orElseThrow();

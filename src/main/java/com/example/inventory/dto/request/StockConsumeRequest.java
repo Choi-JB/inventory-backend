@@ -8,6 +8,7 @@ package com.example.inventory.dto.request;
 import com.example.inventory.enums.ConsumeType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.NotBlank;
 
 public record StockConsumeRequest(
     @NotNull(message = "상품 ID는 필수 입력 항목입니다.")
@@ -18,7 +19,10 @@ public record StockConsumeRequest(
 
     String reason,
     @NotNull(message = "소비 타입은 필수 입력 항목입니다.")
-    ConsumeType consumeType
+    ConsumeType consumeType,
+
+    @NotBlank(message = "idempotencyKey는 필수 입력 항목입니다.")
+    String idempotencyKey
 ) {
     
 }

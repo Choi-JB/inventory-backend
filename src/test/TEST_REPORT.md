@@ -1,6 +1,7 @@
 # 서비스 단위 테스트 정리
 
 **작성일**: 2026-10-16  
+**재실행**: 2026-10-21 (같은 요청 키의 내용 비교 반영 후)
 **대상**: `CategoryService`, `ProductService`, `StockTransactionService`  
 **방식**: Mockito 기반 순수 단위 테스트 (`@ExtendWith(MockitoExtension.class)`)  
 **DB 영향**: 없음 (Repository는 `@Mock` — 실제 INSERT/UPDATE/DELETE 없음)
@@ -11,10 +12,10 @@
 
 | 테스트 클래스 | 케이스 수 | 실패 | 오류 | 스킵 | 소요 시간 |
 |---------------|-----------|------|------|------|-----------|
-| `CategoryServiceTest` | 10 | 0 | 0 | 0 | ~1.4s |
-| `ProductServiceTest` | 8 | 0 | 0 | 0 | ~0.2s |
-| `StockTransactionServiceTest` | 14 | 0 | 0 | 0 | ~0.2s |
-| **합계** | **32** | **0** | **0** | **0** | — |
+| `CategoryServiceTest` | 10 | 0 | 0 | 0 | 0.3s |
+| `ProductServiceTest` | 8 | 0 | 0 | 0 | 0.2s |
+| `StockTransactionServiceTest` | 16 | 0 | 0 | 0 | 0.6s |
+| **합계** | **34** | **0** | **0** | **0** | — |
 
 **결과**: `BUILD SUCCESSFUL` — 전체 통과
 
@@ -65,12 +66,14 @@ JUnit XML: `build/test-results/test/TEST-*.xml`
 
 | 메서드 | 검증 내용 | 결과 |
 |--------|-----------|------|
-| `stockIn_재고를늘리고거래를저장한다` | 입고 시 재고·가중평균·응답 | PASS |
+| `stockIn_재고를늘리고거래를저장한다` | 입고 시 재고·가중평균·응답. 저장 이력의 `idempotencyKey` | PASS |
 | `stockIn_상품없으면NotFound` | 상품 없음 → `NotFoundException` | PASS |
-| `stockOut_단가가없으면판매가를사용한다` | unitPrice null → sellingPrice | PASS |
-| `stockOut_재고부족이면예외` | `InsufficientStockException` | PASS |
-| `stockConsume_소비거래를생성한다` | CONSUME + consumeType | PASS |
-| `stockAdjustment_실사수량으로조정한다` | 조정량(실사−기존) 계산 | PASS |
+| `stockOut_단가가없으면판매가를사용한다` | unitPrice null → sellingPrice. 저장 이력의 `idempotencyKey` | PASS |
+| `stockOut_같은키면기존거래를반환하고_재고는_그대로다` | 같은 `idempotencyKey`와 같은 내용이면 저장·재고 감소 없이 기존 출고를 반환 | PASS |
+| `stockOut_같은키에_수량이_다르면_409이다` | 같은 키에 수량만 다르면 `IdempotencyConflictException`. 저장·재고 잠금 없음 | PASS |
+| `stockOut_재고부족이면예외` | `InsufficientStockException`. 이력은 저장되지 않음 | PASS |
+| `stockConsume_소비거래를생성한다` | CONSUME + consumeType. 저장 이력의 `idempotencyKey` | PASS |
+| `stockAdjustment_실사수량으로조정한다` | 조정량(실사−기존) 계산. 저장 이력의 `idempotencyKey` | PASS |
 | `rollback_ADJUSTMENT는거부한다` | `RollbackNotAllowedException` | PASS |
 | `rollback_이미취소된거래는거부한다` | `AlreadyCanceledException` | PASS |
 | `rollback_상쇄거래는거부한다` | reversalOfId 있는 거래 거부 | PASS |

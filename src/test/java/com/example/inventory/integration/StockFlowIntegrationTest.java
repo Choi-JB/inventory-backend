@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.UUID;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -54,8 +56,8 @@ class StockFlowIntegrationTest extends IntegrationTestSupport {
                         .cookie(staff)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"productId":%d,"actualQuantity":1,"reason":"실사"}
-                                """.formatted(productId)))
+                                {"productId":%d,"actualQuantity":1,"reason":"실사","idempotencyKey":"%s"}
+                                """.formatted(productId, UUID.randomUUID())))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/stock/transactions/" + inId + "/rollback")
@@ -104,8 +106,8 @@ class StockFlowIntegrationTest extends IntegrationTestSupport {
                         .cookie(admin)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"productId":%d,"quantity":11,"reason":"과다출고"}
-                                """.formatted(productId)))
+                                {"productId":%d,"quantity":11,"reason":"과다출고","idempotencyKey":"%s"}
+                                """.formatted(productId, UUID.randomUUID())))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
 
@@ -113,8 +115,8 @@ class StockFlowIntegrationTest extends IntegrationTestSupport {
                         .cookie(admin)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"productId":%d,"quantity":4,"reason":"판매"}
-                                """.formatted(productId)))
+                                {"productId":%d,"quantity":4,"reason":"판매","idempotencyKey":"%s"}
+                                """.formatted(productId, UUID.randomUUID())))
                 .andExpect(status().isCreated())
                 .andReturn();
         int outId = com.jayway.jsonpath.JsonPath.read(out.getResponse().getContentAsString(), "$.id");
@@ -136,6 +138,65 @@ class StockFlowIntegrationTest extends IntegrationTestSupport {
         mockMvc.perform(get("/api/stock/transactions/" + outId).cookie(admin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
+    }
+
+    @Test
+    void 같은_요청키로_출고하면_재고는_한_번만_줄어든다() throws Exception {
+        Cookie[] admin = adminCookies();
+        long categoryId = createCategory(admin, "음료", null);
+        long productId = createProduct(admin, "원두", "SKU-IDEMPOTENT", categoryId);
+        stockIn(admin, productId, 10);
+
+        String body = """
+                {"productId":%d,"quantity":4,"reason":"판매","idempotencyKey":"same-out"}
+                """.formatted(productId);
+        MvcResult first = mockMvc.perform(post("/api/stock/out")
+                        .cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn();
+        int firstId = com.jayway.jsonpath.JsonPath.read(first.getResponse().getContentAsString(), "$.id");
+
+        MvcResult second = mockMvc.perform(post("/api/stock/out")
+                        .cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn();
+        int secondId = com.jayway.jsonpath.JsonPath.read(second.getResponse().getContentAsString(), "$.id");
+
+        org.assertj.core.api.Assertions.assertThat(secondId).isEqualTo(firstId);
+        mockMvc.perform(get("/api/products/" + productId).cookie(admin))
+                .andExpect(jsonPath("$.currentStock").value(6));
+    }
+
+    @Test
+    void 같은_요청키로_다른_수량을_출고하면_409이다() throws Exception {
+        Cookie[] admin = adminCookies();
+        long categoryId = createCategory(admin, "음료", null);
+        long productId = createProduct(admin, "원두", "SKU-KEY-MISMATCH", categoryId);
+        stockIn(admin, productId, 10);
+
+        mockMvc.perform(post("/api/stock/out")
+                        .cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"productId":%d,"quantity":4,"reason":"판매","idempotencyKey":"mismatch-out"}
+                                """.formatted(productId)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/stock/out")
+                        .cookie(admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"productId":%d,"quantity":5,"reason":"판매","idempotencyKey":"mismatch-out"}
+                                """.formatted(productId)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+
+        mockMvc.perform(get("/api/products/" + productId).cookie(admin))
+                .andExpect(jsonPath("$.currentStock").value(6));
     }
 
     @Test
@@ -208,7 +269,7 @@ class StockFlowIntegrationTest extends IntegrationTestSupport {
 
     private static String stockInJson(long productId, int quantity) {
         return """
-                {"productId":%d,"quantity":%d,"unitPrice":1000,"reason":"입고"}
-                """.formatted(productId, quantity);
+                {"productId":%d,"quantity":%d,"unitPrice":1000,"reason":"입고","idempotencyKey":"%s"}
+                """.formatted(productId, quantity, UUID.randomUUID());
     }
 }
