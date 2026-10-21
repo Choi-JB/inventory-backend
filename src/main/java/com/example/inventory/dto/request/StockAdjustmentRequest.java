@@ -15,6 +15,8 @@ public record StockAdjustmentRequest (
     @PositiveOrZero(message = "수량은 0 이상이어야 합니다.")
     Integer actualQuantity,
     @NotBlank(message = "이유는 필수 입력 항목입니다.")
-    String reason
+    String reason,
+    @NotBlank(message = "idempotencyKey는 필수 입력 항목입니다.")
+    String idempotencyKey
 ) {
 }

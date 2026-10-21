@@ -61,7 +61,7 @@ abstract class IntegrationTestSupport {
                         .content("""
                                 {"email":"%s","password":"%s","passwordConfirm":"%s"}
                                 """.formatted(email, password, password)))
-                .andExpect(status().isOk());
+                .andExpect(status().isCreated());
     }
 
     void createUser(String email, String password, Role role) {

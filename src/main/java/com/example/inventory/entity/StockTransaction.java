@@ -14,7 +14,13 @@ import com.example.inventory.enums.TransactionType;
 import com.example.inventory.enums.TransactionStatus;
 
 @Entity
-@Table(name = "stock_transactions")
+@Table(
+    name = "stock_transactions",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_stock_transactions_idempotency",
+        columnNames = {"idempotency_key"}
+    )
+)
 @Getter
 @NoArgsConstructor
 public class StockTransaction {
@@ -74,8 +80,11 @@ public class StockTransaction {
     @Column(name = "consume_type", nullable = true)
     private ConsumeType consumeType;
 
+    @Column(name = "idempotency_key")
+    private String idempotencyKey;
+
     //기본 생성자
-    public StockTransaction(Long productId, Long userId, Integer quantity, BigDecimal unitPrice, BigDecimal costPriceSnapshot, String reason, TransactionType type, TransactionStatus status, ConsumeType consumeType, Long reversalOfId) {
+    public StockTransaction(Long productId, Long userId, Integer quantity, BigDecimal unitPrice, BigDecimal costPriceSnapshot, String reason, TransactionType type, TransactionStatus status, ConsumeType consumeType, Long reversalOfId, String idempotencyKey) {
         this.productId = productId;
         this.userId = userId;
         this.quantity = quantity;
@@ -86,6 +95,7 @@ public class StockTransaction {
         this.status = status;
         this.consumeType = consumeType;
         this.reversalOfId = reversalOfId;
+        this.idempotencyKey = idempotencyKey;
     }
 
     @PrePersist
