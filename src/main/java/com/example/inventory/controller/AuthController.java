@@ -81,6 +81,8 @@ public class AuthController {
     @Operation(summary = "로그아웃", description = "accessToken 쿠키를 만료시켜 브라우저가 삭제하도록 합니다.")
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
+        // 쿠키를 지우기 전에 해당 리프레시 토큰 행을 폐기한다.
+        authService.revokeRefreshToken(authCookieUtils.getCookieValue(request, "refreshToken"));
 
         response.addHeader(HttpHeaders.SET_COOKIE, authCookieUtils.clearAccessTokenCookie().toString());
         response.addHeader(HttpHeaders.SET_COOKIE, authCookieUtils.clearRefreshTokenCookie().toString());

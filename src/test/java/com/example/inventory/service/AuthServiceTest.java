@@ -4,14 +4,17 @@ import com.example.inventory.dto.request.LoginRequest;
 import com.example.inventory.dto.request.RefreshRequest;
 import com.example.inventory.dto.request.SignUpRequest;
 import com.example.inventory.dto.response.LoginResponse;
+import com.example.inventory.entity.RefreshToken;
 import com.example.inventory.entity.User;
 import com.example.inventory.enums.Role;
 import com.example.inventory.exception.ConflictException;
 import com.example.inventory.exception.InvalidTokenException;
 import com.example.inventory.exception.NotFoundException;
 import com.example.inventory.exception.ValidationException;
+import com.example.inventory.repository.RefreshTokenRepository;
 import com.example.inventory.repository.UserRepository;
 import com.example.inventory.security.JwtProvider;
+import com.example.inventory.security.TokenHasher;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +24,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -39,6 +44,9 @@ class AuthServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
 
     @Mock
     private JwtProvider jwtProvider;
@@ -93,6 +101,7 @@ class AuthServiceTest {
         when(passwordEncoder.matches("pass1234", "hashed")).thenReturn(true);
         when(jwtProvider.generateToken(user)).thenReturn("access");
         when(jwtProvider.generateRefreshToken(user)).thenReturn("refresh");
+        stubIssuedRefresh("refresh");
 
         LoginResponse response = authService.login(new LoginRequest("user@test.com", "pass1234"));
 
@@ -139,6 +148,7 @@ class AuthServiceTest {
         when(userRepository.findByGoogleId("google-sub")).thenReturn(Optional.of(user));
         when(jwtProvider.generateToken(user)).thenReturn("access");
         when(jwtProvider.generateRefreshToken(user)).thenReturn("refresh");
+        stubIssuedRefresh("refresh");
 
         LoginResponse response = authService.loginWithGoogle("google-sub", "user@test.com");
 
@@ -154,6 +164,7 @@ class AuthServiceTest {
         stubSaveAssignsId();
         when(jwtProvider.generateToken(any(User.class))).thenReturn("access");
         when(jwtProvider.generateRefreshToken(any(User.class))).thenReturn("refresh");
+        stubIssuedRefresh("refresh");
 
         LoginResponse response = authService.loginWithGoogle("new-sub", "new@test.com");
 
@@ -171,8 +182,12 @@ class AuthServiceTest {
         when(jwtProvider.getClaims("refresh-token")).thenReturn(claims);
         when(claims.getSubject()).thenReturn("1");
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(refreshTokenRepository.findByTokenHash(TokenHasher.sha256("refresh-token")))
+                .thenReturn(Optional.of(activeToken(10L, 1L, "refresh-token")));
+        when(refreshTokenRepository.revokeIfActive(any(), any())).thenReturn(1);
         when(jwtProvider.generateToken(user)).thenReturn("new-access");
         when(jwtProvider.generateRefreshToken(user)).thenReturn("new-refresh");
+        stubIssuedRefresh("new-refresh");
 
         LoginResponse response = authService.refresh(new RefreshRequest("refresh-token"));
 
@@ -198,6 +213,8 @@ class AuthServiceTest {
         when(jwtProvider.validateRefreshToken("refresh-token")).thenReturn(true);
         when(jwtProvider.getClaims("refresh-token")).thenReturn(claims);
         when(claims.getSubject()).thenReturn("99");
+        when(refreshTokenRepository.findByTokenHash(TokenHasher.sha256("refresh-token")))
+                .thenReturn(Optional.of(activeToken(10L, 99L, "refresh-token")));
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest("refresh-token")))
@@ -215,6 +232,18 @@ class AuthServiceTest {
         User user = User.google(googleId, email, Role.STAFF);
         ReflectionTestUtils.setField(user, "id", id);
         return user;
+    }
+
+    private void stubIssuedRefresh(String token) {
+        Claims issued = mock(Claims.class);
+        when(jwtProvider.getClaims(token)).thenReturn(issued);
+        when(issued.getExpiration()).thenReturn(new Date(System.currentTimeMillis() + 60_000));
+    }
+
+    private RefreshToken activeToken(Long id, Long userId, String rawToken) {
+        RefreshToken token = new RefreshToken(userId, TokenHasher.sha256(rawToken), LocalDateTime.now().plusHours(1));
+        ReflectionTestUtils.setField(token, "id", id);
+        return token;
     }
 
     private void stubSaveAssignsId() {
