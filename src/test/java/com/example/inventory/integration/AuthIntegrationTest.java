@@ -1,10 +1,15 @@
 package com.example.inventory.integration;
 
+import com.example.inventory.entity.RefreshToken;
+import com.example.inventory.repository.RefreshTokenRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MvcResult;
 
 import jakarta.servlet.http.Cookie;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,6 +20,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AuthIntegrationTest extends IntegrationTestSupport {
+
+    @Autowired
+    RefreshTokenRepository refreshTokenRepository;
 
     @Test
     void 회원가입후_로그인하면_HttpOnly쿠키가_내려오고_me가_STAFF를_반환한다() throws Exception {
@@ -100,6 +108,49 @@ class AuthIntegrationTest extends IntegrationTestSupport {
         mockMvc.perform(get("/api/auth/me").cookie(authCookies(refreshed)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("staff@test.com"));
+    }
+
+    @Test
+    void 로그아웃하면_이전_리프레시토큰으로_재발급할_수_없다() throws Exception {
+        signUp("staff@test.com", "pass1234");
+        Cookie[] cookies = loginCookies("staff@test.com", "pass1234");
+
+        mockMvc.perform(post("/api/auth/logout").cookie(cookies))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/auth/refresh").cookie(cookies))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+    }
+
+    @Test
+    void 만료된_리프레시토큰은_재발급이_거절된다() throws Exception {
+        signUp("staff@test.com", "pass1234");
+        Cookie[] cookies = loginCookies("staff@test.com", "pass1234");
+        RefreshToken stored = refreshTokenRepository.findAll().get(0);
+        ReflectionTestUtils.setField(stored, "expiresAt", LocalDateTime.now().minusMinutes(1));
+        refreshTokenRepository.save(stored);
+
+        mockMvc.perform(post("/api/auth/refresh").cookie(cookies))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+    }
+
+    @Test
+    void 재발급에_쓴_토큰은_다시_쓸_수_없다() throws Exception {
+        signUp("staff@test.com", "pass1234");
+        Cookie[] cookies = loginCookies("staff@test.com", "pass1234");
+
+        MvcResult refreshed = mockMvc.perform(post("/api/auth/refresh").cookie(cookies))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        mockMvc.perform(post("/api/auth/refresh").cookie(cookies))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+
+        mockMvc.perform(get("/api/auth/me").cookie(authCookies(refreshed)))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class JwtProvider {
@@ -55,6 +56,7 @@ public class JwtProvider {
         return Jwts.builder()
             .subject(String.valueOf(user.getId()))  //사용자를 식별하는 값을 넣음( ex: 사용자 아이디)
             .claim("type", "refresh") //JWT payload에 포함될 정보
+            .id(UUID.randomUUID().toString()) //같은 초에 다시 발급해도 토큰 값이 달라지게 한다
             .issuedAt(now) //JWT 발급시간
             .expiration(expiry) //JWT 만료시간
             .signWith(key) //JWT 서명

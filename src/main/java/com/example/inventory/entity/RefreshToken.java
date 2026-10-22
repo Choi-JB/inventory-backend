@@ -47,6 +47,11 @@ public class RefreshToken {
         this.expiresAt = expiresAt;
     }
 
+    /** 행을 지우지 않고 폐기 시각만 기록한다. */
+    public void revoke(LocalDateTime revokedAt) {
+        this.revokedAt = revokedAt;
+    }
+
     //생성 시 자동 설정
     @PrePersist
     protected void onCreate() {
