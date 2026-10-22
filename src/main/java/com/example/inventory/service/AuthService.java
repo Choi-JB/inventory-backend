@@ -16,13 +16,20 @@ import com.example.inventory.exception.ValidationException;
 import com.example.inventory.exception.InvalidTokenException;
 import com.example.inventory.entity.User;
 import com.example.inventory.enums.Role;
+import com.example.inventory.repository.RefreshTokenRepository;
 import com.example.inventory.repository.UserRepository;
 import com.example.inventory.security.JwtProvider;
+import com.example.inventory.security.TokenHasher;
+import com.example.inventory.entity.RefreshToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.example.inventory.dto.request.SignUpRequest;
 import io.jsonwebtoken.Claims;
+
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Service
 public class AuthService {
@@ -30,11 +37,14 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
 
-    public AuthService(UserRepository userRepository, JwtProvider jwtProvider, PasswordEncoder passwordEncoder) {
+    public AuthService(UserRepository userRepository, RefreshTokenRepository refreshTokenRepository,
+            JwtProvider jwtProvider, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
         this.jwtProvider = jwtProvider;
         this.passwordEncoder = passwordEncoder;
     }
@@ -51,7 +61,7 @@ public class AuthService {
                 });
 
         String accessToken = jwtProvider.generateToken(user);
-        String refreshToken = jwtProvider.generateRefreshToken(user);
+        String refreshToken = issueRefreshToken(user);
         log.info("Google 로그인 성공: userId={}, name={}, role={}", user.getId(), user.getName(), user.getRole());
 
         return new LoginResponse(
@@ -76,7 +86,7 @@ public class AuthService {
         }
 
         String accessToken = jwtProvider.generateToken(user);
-        String refreshToken = jwtProvider.generateRefreshToken(user);
+        String refreshToken = issueRefreshToken(user);
 
         log.info("로그인 성공: userId={}, name={}, role={}", user.getId(), user.getName(), user.getRole());
 
@@ -101,22 +111,62 @@ public class AuthService {
         log.info("회원가입 성공: userId={}, name={}, email={}", user.getId(), user.getName(), user.getEmail());
     }
 
+    /** 로그아웃 시 쿠키의 리프레시 토큰만 폐기한다. 쿠키가 없으면 아무 것도 하지 않는다. */
+    @Transactional
+    public void revokeRefreshToken(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+        refreshTokenRepository.findByTokenHash(TokenHasher.sha256(refreshToken)).ifPresent(stored -> {
+            if (stored.getRevokedAt() == null) {
+                stored.revoke(LocalDateTime.now());
+            }
+        });
+    }
+
     // 토큰 갱신 처리
+    @Transactional
     public LoginResponse refresh(RefreshRequest refreshRequest) {
         if (!jwtProvider.validateRefreshToken(refreshRequest.refreshToken())) {
             throw new InvalidTokenException("유효하지 않은 리프레시 토큰입니다.");
         }
+        String tokenHash = TokenHasher.sha256(refreshRequest.refreshToken());
+        RefreshToken stored = refreshTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(() -> new InvalidTokenException("유효하지 않은 리프레시 토큰입니다."));
+        if (stored.getRevokedAt() != null || stored.getExpiresAt() == null
+                || stored.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new InvalidTokenException("유효하지 않은 리프레시 토큰입니다.");
+        }
+
         Claims claims = jwtProvider.getClaims(refreshRequest.refreshToken());
         Long userId = Long.valueOf(claims.getSubject());
-
+        if (!stored.getUserId().equals(userId)) {
+            throw new InvalidTokenException("유효하지 않은 리프레시 토큰입니다.");
+        }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("존재하지 않는 사용자입니다."));
 
+        // 이미 다른 요청이 폐기했으면 0. 새 토큰을 만들지 않는다.
+        int revoked = refreshTokenRepository.revokeIfActive(stored.getId(), LocalDateTime.now());
+        if (revoked == 0) {
+            throw new InvalidTokenException("유효하지 않은 리프레시 토큰입니다.");
+        }
+
         String accessToken = jwtProvider.generateToken(user);
-        String refreshToken = jwtProvider.generateRefreshToken(user);
+        String refreshToken = issueRefreshToken(user);
 
         log.info("토큰 갱싱 성공: userId={}, name={}, role={}", user.getId(), user.getName(), user.getRole());
         return new LoginResponse(accessToken, refreshToken,
                 new LoginResponse.UserInfo(user.getId(), user.getEmail(), user.getRole().name()));
+    }
+
+    /** 리프레시 토큰을 발급하고, 그 해시와 만료 시각만 DB에 저장한다. */
+    private String issueRefreshToken(User user) {
+        String refreshToken = jwtProvider.generateRefreshToken(user);
+        LocalDateTime expiresAt = LocalDateTime.ofInstant(
+                jwtProvider.getClaims(refreshToken).getExpiration().toInstant(),
+                ZoneId.systemDefault());
+        refreshTokenRepository.save(new RefreshToken(user.getId(), TokenHasher.sha256(refreshToken), expiresAt));
+        return refreshToken;
     }
 }
