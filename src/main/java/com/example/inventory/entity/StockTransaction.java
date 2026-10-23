@@ -18,7 +18,7 @@ import com.example.inventory.enums.TransactionStatus;
     name = "stock_transactions",
     uniqueConstraints = @UniqueConstraint(
         name = "uk_stock_transactions_idempotency",
-        columnNames = {"idempotency_key"}
+        columnNames = {"user_id","idempotency_key"}
     )
 )
 @Getter
