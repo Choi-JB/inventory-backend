@@ -71,7 +71,7 @@ class StockTransactionServiceTest {
 
     @BeforeEach
     void 저장된_요청키가_없으면_새_거래로_진행한다() {
-        lenient().when(stockTransactionRepository.findByIdempotencyKey(any()))
+        lenient().when(stockTransactionRepository.findByUserIdAndIdempotencyKey(any(), any()))
                 .thenReturn(Optional.empty());
         lenient().when(transactionTemplate.execute(ArgumentMatchers.<TransactionCallback<StockTransactionResponse>>any()))
                 .thenAnswer(invocation -> {
@@ -120,7 +120,7 @@ class StockTransactionServiceTest {
         StockTransaction tx = transaction(7L, 1L, 10L, TransactionType.OUT, TransactionStatus.ACTIVE, 4, null);
         Product product = productWithStock(1L, 6, "500");
         User user = user(10L, "STAFF-10");
-        when(stockTransactionRepository.findByIdempotencyKey("idem-7")).thenReturn(Optional.of(tx));
+        when(stockTransactionRepository.findByUserIdAndIdempotencyKey(10L, "idem-7")).thenReturn(Optional.of(tx));
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(userRepository.findById(10L)).thenReturn(Optional.of(user));
 
@@ -136,7 +136,7 @@ class StockTransactionServiceTest {
     @Test
     void stockOut_같은키에_수량이_다르면_409이다() {
         StockTransaction tx = transaction(7L, 1L, 10L, TransactionType.OUT, TransactionStatus.ACTIVE, 4, null);
-        when(stockTransactionRepository.findByIdempotencyKey("idem-7")).thenReturn(Optional.of(tx));
+        when(stockTransactionRepository.findByUserIdAndIdempotencyKey(10L, "idem-7")).thenReturn(Optional.of(tx));
 
         assertThatThrownBy(() -> stockTransactionService.stockOut(1L, 10L, 9, null, "reason", "idem-7"))
                 .isInstanceOf(IdempotencyConflictException.class);

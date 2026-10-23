@@ -8,6 +8,6 @@ import java.util.Optional;
 public interface StockTransactionRepository extends JpaRepository<StockTransaction, Long>, JpaSpecificationExecutor<StockTransaction> {
     boolean existsByProductId(Long productId);
     Optional<StockTransaction> findById(Long id);
-    Optional<StockTransaction> findByIdempotencyKey(String idempotencyKey);
+    Optional<StockTransaction> findByUserIdAndIdempotencyKey(Long userId, String idempotencyKey);
 
 }

@@ -184,10 +184,10 @@ public class StockTransactionService {
         return StockTransactionResponse.from(stockTransaction, user, canceledUser, product);
     }
 
-    // 키가 없으면 null. 내용이 같으면 기존 거래, 다르면 409.
-    private StockTransactionResponse findMatching(String idempotencyKey, TransactionType type, Long productId,
+    // 키가 없으면 null. 같은 사용자의 같은 키이고 내용이 같으면 기존 거래, 다르면 409.
+    private StockTransactionResponse findMatching(Long userId, String idempotencyKey, TransactionType type, Long productId,
             Integer quantity, BigDecimal unitPrice, ConsumeType consumeType, String reason) {
-        return stockTransactionRepository.findByIdempotencyKey(idempotencyKey)
+        return stockTransactionRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
                 .map(tx -> {
                     if (!sameRequest(tx, type, productId, quantity, unitPrice, consumeType, reason)) {
                         throw new IdempotencyConflictException("같은 요청 키로 다른 내용의 거래가 이미 처리되었습니다.");
@@ -223,17 +223,17 @@ public class StockTransactionService {
     }
 
     // 저장 트랜잭션 밖에서 키를 다시 읽어야 유니크 제약 이후에도 조회가 된다.
-    private StockTransactionResponse executeIdempotent(String idempotencyKey, TransactionType type, Long productId,
+    private StockTransactionResponse executeIdempotent(Long userId, String idempotencyKey, TransactionType type, Long productId,
             Integer quantity, BigDecimal unitPrice, ConsumeType consumeType, String reason,
             Supplier<StockTransactionResponse> write) {
-        StockTransactionResponse existing = findMatching(idempotencyKey, type, productId, quantity, unitPrice, consumeType, reason);
+        StockTransactionResponse existing = findMatching(userId, idempotencyKey, type, productId, quantity, unitPrice, consumeType, reason);
         if (existing != null) {
             return existing;
         }
         try {
             return transactionTemplate.execute(status -> write.get());
         } catch (DataIntegrityViolationException e) {
-            StockTransactionResponse saved = findMatching(idempotencyKey, type, productId, quantity, unitPrice, consumeType, reason);
+            StockTransactionResponse saved = findMatching(userId, idempotencyKey, type, productId, quantity, unitPrice, consumeType, reason);
             if (saved != null) {
                 return saved;
             }
@@ -244,7 +244,7 @@ public class StockTransactionService {
     // 재고 입고
     public StockTransactionResponse stockIn(Long productId, Long userId, Integer quantity, BigDecimal unitPrice,
             String reason, String idempotencyKey) {
-        return executeIdempotent(idempotencyKey, TransactionType.IN, productId, quantity, unitPrice, null, reason,
+        return executeIdempotent(userId, idempotencyKey, TransactionType.IN, productId, quantity, unitPrice, null, reason,
                 () -> writeStockIn(productId, userId, quantity, unitPrice, reason, idempotencyKey));
     }
 
@@ -270,7 +270,7 @@ public class StockTransactionService {
     // 재고 출고
     public StockTransactionResponse stockOut(Long productId, Long userId, Integer quantity, BigDecimal unitPrice,
             String reason, String idempotencyKey) {
-        return executeIdempotent(idempotencyKey, TransactionType.OUT, productId, quantity, unitPrice, null, reason,
+        return executeIdempotent(userId, idempotencyKey, TransactionType.OUT, productId, quantity, unitPrice, null, reason,
                 () -> writeStockOut(productId, userId, quantity, unitPrice, reason, idempotencyKey));
     }
 
@@ -300,7 +300,7 @@ public class StockTransactionService {
     // 재고 소비
     public StockTransactionResponse stockConsume(Long productId, Long userId, Integer quantity, String reason,
             ConsumeType consumeType, String idempotencyKey) {
-        return executeIdempotent(idempotencyKey, TransactionType.CONSUME, productId, quantity, null, consumeType, reason,
+        return executeIdempotent(userId, idempotencyKey, TransactionType.CONSUME, productId, quantity, null, consumeType, reason,
                 () -> writeStockConsume(productId, userId, quantity, reason, consumeType, idempotencyKey));
     }
 
@@ -326,7 +326,7 @@ public class StockTransactionService {
     // 재고 조정
     public StockTransactionResponse stockAdjustment(Long productId, Long userId, Integer actualQuantity,
             String reason, String idempotencyKey) {
-        return executeIdempotent(idempotencyKey, TransactionType.ADJUSTMENT, productId, null, null, null, reason,
+        return executeIdempotent(userId, idempotencyKey, TransactionType.ADJUSTMENT, productId, null, null, null, reason,
                 () -> writeStockAdjustment(productId, userId, actualQuantity, reason, idempotencyKey));
     }
 
